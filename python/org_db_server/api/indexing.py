@@ -115,6 +115,10 @@ async def index_file(request: IndexFileRequest):
                 # Store chunks and embeddings
                 db.store_chunks(file_id, all_chunks, embeddings, embedding_service.model_name)
 
+        # Populate FTS5 table (independent of chunking/embeddings)
+        headlines_dict = [hl.model_dump() for hl in request.headlines]
+        db.populate_fts(file_id, headlines_dict)
+
         db.conn.commit()
 
         return IndexFileResponse(

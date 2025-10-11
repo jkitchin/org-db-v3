@@ -247,8 +247,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
     filename,
     title,
     content,
-    tags,
-    content='chunks',
-    content_rowid='rowid'
+    tags
 );
 """
