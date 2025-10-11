@@ -172,5 +172,65 @@ Key bindings:
         (org-db-v3-semantic-search query)
       (message "No text found at point"))))
 
+;;;###autoload
+(defun org-db-v3-fulltext-search (query &optional limit)
+  "Perform full-text search for QUERY using FTS5.
+Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
+  (interactive (list (read-string "Fulltext search: ")
+                    (when current-prefix-arg
+                      (read-number "Limit: " org-db-v3-search-default-limit))))
+
+  (org-db-v3-ensure-server)
+
+  (let ((limit (or limit org-db-v3-search-default-limit)))
+    (plz 'post (concat (org-db-v3-server-url) "/api/search/fulltext")
+      :headers '(("Content-Type" . "application/json"))
+      :body (json-encode `((query . ,query)
+                          (limit . ,limit)))
+      :as #'json-read
+      :then (lambda (response)
+              (org-db-v3-display-fulltext-results query response))
+      :else (lambda (error)
+              (message "Search error: %s" (plz-error-message error))))))
+
+(defun org-db-v3-display-fulltext-results (query response)
+  "Display full-text search RESPONSE for QUERY in results buffer."
+  (let ((results (alist-get 'results response)))
+
+    (with-current-buffer (get-buffer-create org-db-v3-search-results-buffer)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (org-mode)
+
+        ;; Insert header
+        (insert (format "* Full-Text Search Results: \"%s\"\n\n" query))
+        (insert (format "Results: %d\n\n" (length results)))
+
+        (if (zerop (length results))
+            (insert "No results found.\n")
+
+          ;; Insert results
+          (dotimes (i (length results))
+            (let* ((result (aref results i))
+                   (filename (alist-get 'filename result))
+                   (title (alist-get 'title result))
+                   (content (alist-get 'content result))
+                   (tags (alist-get 'tags result)))
+
+              (insert (format "** Result %d: %s\n" (1+ i) title))
+              (insert (format "   :PROPERTIES:\n"))
+              (insert (format "   :FILE: %s\n" filename))
+              (insert (format "   :TAGS: %s\n" (or tags "")))
+              (insert (format "   :END:\n\n"))
+              (insert (format "   %s\n\n" content)))))
+
+        ;; Set up buffer
+        (goto-char (point-min))
+        (setq buffer-read-only t)
+        (org-db-v3-search-mode))
+
+      ;; Display buffer
+      (pop-to-buffer (current-buffer)))))
+
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here
