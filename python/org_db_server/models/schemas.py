@@ -39,6 +39,11 @@ class SrcBlockData(BaseModel):
     contents: str
     begin: int
 
+class ImageData(BaseModel):
+    """Image data from Emacs."""
+    path: str
+    begin: int
+
 class IndexFileRequest(BaseModel):
     """Request to index a file."""
     filename: str
@@ -48,6 +53,7 @@ class IndexFileRequest(BaseModel):
     links: List[LinkData] = Field(default_factory=list)
     keywords: List[KeywordData] = Field(default_factory=list)
     src_blocks: List[SrcBlockData] = Field(default_factory=list)
+    images: List[ImageData] = Field(default_factory=list)
 
 class IndexFileResponse(BaseModel):
     """Response from indexing a file."""
@@ -94,3 +100,20 @@ class FulltextSearchResponse(BaseModel):
     """Response from fulltext search."""
     results: List[FulltextSearchResult]
     query: str
+
+class ImageSearchRequest(BaseModel):
+    """Request for image search by text description."""
+    query: str = Field(..., min_length=1, description="Text description of image")
+    limit: int = Field(default=10, ge=1, le=100, description="Maximum number of results")
+
+class ImageSearchResult(BaseModel):
+    """Single image search result."""
+    image_path: str
+    similarity_score: float
+    filename: str
+
+class ImageSearchResponse(BaseModel):
+    """Response from image search."""
+    results: List[ImageSearchResult]
+    query: str
+    model_used: str

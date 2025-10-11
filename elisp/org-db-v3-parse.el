@@ -69,16 +69,32 @@
             :contents (org-element-property :value src)
             :begin (org-element-property :begin src)))))
 
+(defun org-db-v3-parse-images (parse-tree)
+  "Extract image links from PARSE-TREE as a list of plists."
+  (org-element-map parse-tree 'link
+    (lambda (link)
+      (let ((type (org-element-property :type link))
+            (path (org-element-property :path link)))
+        ;; Filter for image file types
+        (when (and (member type '("file" "attachment"))
+                   (string-match-p "\\.\\(png\\|jpg\\|jpeg\\|gif\\|svg\\|webp\\)\\'" path))
+          (list :path path
+                :begin (org-element-property :begin link)))))))
+
 (defun org-db-v3-parse-buffer-to-json ()
   "Parse current org buffer and return JSON string for server."
   (let* ((parse-tree (org-element-parse-buffer))
+         (file-size (when (buffer-file-name)
+                     (nth 7 (file-attributes (buffer-file-name)))))
          (data (list :filename (buffer-file-name)
                      :md5 (md5 (current-buffer))
+                     :file-size (or file-size 0)
                      :content (buffer-string)
                      :headlines (org-db-v3-parse-headlines parse-tree)
                      :links (org-db-v3-parse-links parse-tree)
                      :keywords (org-db-v3-parse-keywords parse-tree)
-                     :src-blocks (org-db-v3-parse-src-blocks parse-tree))))
+                     :src-blocks (org-db-v3-parse-src-blocks parse-tree)
+                     :images (org-db-v3-parse-images parse-tree))))
     (json-encode data)))
 
 (provide 'org-db-v3-parse)

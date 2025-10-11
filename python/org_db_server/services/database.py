@@ -119,3 +119,31 @@ class Database:
                 )
 
         self.conn.commit()
+
+    def store_images(self, filename_id: int, images: List[Dict], embeddings: List[np.ndarray], model_name: str):
+        """Store images and their CLIP embeddings."""
+        cursor = self.conn.cursor()
+
+        # Delete existing images for this file
+        cursor.execute("DELETE FROM images WHERE filename_id = ?", (filename_id,))
+
+        for image_data, embedding in zip(images, embeddings):
+            # Insert image
+            cursor.execute(
+                """INSERT INTO images (filename_id, image_path, begin)
+                   VALUES (?, ?, ?)""",
+                (filename_id, image_data["path"], image_data["begin"])
+            )
+            image_id = cursor.lastrowid
+
+            # Convert embedding to bytes
+            embedding_bytes = embedding.astype(np.float32).tobytes()
+
+            # Insert image embedding
+            cursor.execute(
+                """INSERT INTO image_embeddings (image_id, clip_model, embedding_vector, embedding_dim, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (image_id, model_name, embedding_bytes, len(embedding), datetime.now().isoformat())
+            )
+
+        self.conn.commit()

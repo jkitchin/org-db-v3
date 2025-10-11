@@ -6,7 +6,10 @@ from org_db_server.models.schemas import IndexFileRequest, IndexFileResponse
 from org_db_server.services.database import Database
 from org_db_server.services.chunking import chunk_text
 from org_db_server.services.embeddings import get_embedding_service
+from org_db_server.services.clip_service import get_clip_service
 from org_db_server.config import settings
+from pathlib import Path
+import os
 
 router = APIRouter(prefix="/api/index", tags=["indexing"])
 
@@ -118,6 +121,35 @@ async def index_file(request: IndexFileRequest):
         # Populate FTS5 table (independent of chunking/embeddings)
         headlines_dict = [hl.model_dump() for hl in request.headlines]
         db.populate_fts(file_id, headlines_dict)
+
+        # Process images with CLIP if any
+        if request.images:
+            images_with_embeddings = []
+            images_data = []
+
+            for img in request.images:
+                # Resolve image path relative to org file
+                org_dir = Path(request.filename).parent
+                img_path = org_dir / img.path
+
+                if img_path.exists() and img_path.is_file():
+                    try:
+                        images_data.append({"path": str(img_path), "begin": img.begin})
+                    except Exception as e:
+                        print(f"Error preparing image {img_path}: {e}")
+
+            # Generate CLIP embeddings for valid images
+            if images_data:
+                try:
+                    clip_service = get_clip_service()
+                    image_paths = [img["path"] for img in images_data]
+                    embeddings = clip_service.generate_image_embeddings(image_paths)
+
+                    # Store images and embeddings
+                    db.store_images(file_id, images_data, embeddings, clip_service.model_name)
+                except Exception as e:
+                    print(f"Error generating CLIP embeddings: {e}")
+                    # Continue without image embeddings
 
         db.conn.commit()
 

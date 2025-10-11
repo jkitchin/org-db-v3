@@ -232,5 +232,71 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
       ;; Display buffer
       (pop-to-buffer (current-buffer)))))
 
+;;;###autoload
+(defun org-db-v3-image-search (query &optional limit)
+  "Perform image search for QUERY using CLIP embeddings.
+Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
+  (interactive (list (read-string "Image search query: ")
+                    (when current-prefix-arg
+                      (read-number "Limit: " org-db-v3-search-default-limit))))
+
+  (org-db-v3-ensure-server)
+
+  (let ((limit (or limit org-db-v3-search-default-limit)))
+    (plz 'post (concat (org-db-v3-server-url) "/api/search/images")
+      :headers '(("Content-Type" . "application/json"))
+      :body (json-encode `((query . ,query)
+                          (limit . ,limit)))
+      :as #'json-read
+      :then (lambda (response)
+              (org-db-v3-display-image-results query response))
+      :else (lambda (error)
+              (message "Search error: %s" (plz-error-message error))))))
+
+(defun org-db-v3-display-image-results (query response)
+  "Display image search RESPONSE for QUERY in results buffer."
+  (let ((results (alist-get 'results response))
+        (model-used (alist-get 'model_used response)))
+
+    (with-current-buffer (get-buffer-create org-db-v3-search-results-buffer)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (org-mode)
+
+        ;; Insert header
+        (insert (format "* Image Search Results: \"%s\"\n\n" query))
+        (insert (format "Model: %s | Results: %d\n\n" model-used (length results)))
+
+        (if (zerop (length results))
+            (insert "No results found.\n")
+
+          ;; Insert results
+          (dotimes (i (length results))
+            (let* ((result (aref results i))
+                   (image-path (alist-get 'image_path result))
+                   (filename (alist-get 'filename result))
+                   (similarity (alist-get 'similarity_score result)))
+
+              (insert (format "** Result %d (score: %.3f)\n" (1+ i) similarity))
+              (insert (format "   :PROPERTIES:\n"))
+              (insert (format "   :IMAGE: %s\n" image-path))
+              (insert (format "   :FILE: %s\n" filename))
+              (insert (format "   :END:\n\n"))
+
+              ;; Try to display the image inline if possible
+              (when (and (file-exists-p image-path)
+                        (display-images-p))
+                (insert "   ")
+                (insert-image (create-image image-path nil nil :max-width 400))
+                (insert "\n\n")))))
+
+        ;; Set up buffer
+        (goto-char (point-min))
+        (setq buffer-read-only t)
+        (org-db-v3-search-mode))
+
+      ;; Display buffer
+      (pop-to-buffer (current-buffer)))))
+
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here
