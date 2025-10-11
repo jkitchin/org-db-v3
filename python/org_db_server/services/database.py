@@ -1,8 +1,9 @@
 """Database service for org-db."""
 import sqlite3
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import datetime
+import numpy as np
 
 from org_db_server.models.db_models import SCHEMA
 
@@ -58,3 +59,32 @@ class Database:
             )
             self.conn.commit()
             return cursor.lastrowid
+
+    def store_chunks(self, filename_id: int, chunks: List[Dict], embeddings: List[np.ndarray], model_name: str):
+        """Store text chunks and their embeddings."""
+        cursor = self.conn.cursor()
+
+        # Delete existing chunks for this file
+        cursor.execute("DELETE FROM chunks WHERE filename_id = ?", (filename_id,))
+
+        for chunk_data, embedding in zip(chunks, embeddings):
+            # Insert chunk
+            cursor.execute(
+                """INSERT INTO chunks (filename_id, headline_id, chunk_text, chunk_type, begin_line, end_line, char_offset)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (filename_id, None, chunk_data["text"], chunk_data["chunk_type"],
+                 chunk_data["begin_line"], chunk_data["end_line"], 0)
+            )
+            chunk_id = cursor.lastrowid
+
+            # Convert embedding to bytes
+            embedding_bytes = embedding.astype(np.float32).tobytes()
+
+            # Insert embedding
+            cursor.execute(
+                """INSERT INTO embeddings (chunk_id, embedding_model, embedding_vector, embedding_dim, created_at)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (chunk_id, model_name, embedding_bytes, len(embedding), datetime.now().isoformat())
+            )
+
+        self.conn.commit()

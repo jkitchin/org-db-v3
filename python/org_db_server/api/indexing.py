@@ -4,6 +4,8 @@ from datetime import datetime
 
 from org_db_server.models.schemas import IndexFileRequest, IndexFileResponse
 from org_db_server.services.database import Database
+from org_db_server.services.chunking import chunk_text
+from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.config import settings
 
 router = APIRouter(prefix="/api/index", tags=["indexing"])
@@ -93,6 +95,25 @@ async def index_file(request: IndexFileRequest):
                 "INSERT INTO src_blocks (filename_id, language, contents, begin) VALUES (?, ?, ?, ?)",
                 (file_id, src.language, src.contents, src.begin)
             )
+
+        # Generate chunks from headline text for semantic search
+        headline_texts = [hl.title for hl in request.headlines if hl.title]
+
+        if headline_texts:
+            # Chunk the text
+            all_chunks = []
+            for text in headline_texts:
+                chunks = chunk_text(text, method="paragraph")
+                all_chunks.extend(chunks)
+
+            # Generate embeddings
+            if all_chunks:
+                embedding_service = get_embedding_service()
+                chunk_texts = [c["text"] for c in all_chunks]
+                embeddings = embedding_service.generate_embeddings(chunk_texts)
+
+                # Store chunks and embeddings
+                db.store_chunks(file_id, all_chunks, embeddings, embedding_service.model_name)
 
         db.conn.commit()
 
