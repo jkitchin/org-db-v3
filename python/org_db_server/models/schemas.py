@@ -96,6 +96,8 @@ class FulltextSearchResult(BaseModel):
     title: str
     content: str
     tags: str
+    snippet: str
+    rank: float
 
 class FulltextSearchResponse(BaseModel):
     """Response from fulltext search."""

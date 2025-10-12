@@ -100,13 +100,25 @@ async def semantic_search(request: SemanticSearchRequest):
 
 @router.post("/fulltext", response_model=FulltextSearchResponse)
 async def fulltext_search(request: FulltextSearchRequest):
-    """Perform full-text search using FTS5."""
+    """Perform full-text search using FTS5 with snippets and relevance ranking."""
     try:
         cursor = db.conn.cursor()
 
-        # Query FTS5 table
+        # Query FTS5 table with snippet() for highlighted context and bm25() for relevance
+        # snippet() parameters: column, start_tag, end_tag, ellipsis, token_count
+        # We use '>>>' and '<<<' as markers that can be removed/highlighted in Elisp
         cursor.execute(
-            f"SELECT filename, title, content, tags FROM fts_content WHERE fts_content MATCH ? LIMIT ?",
+            """SELECT
+                filename,
+                title,
+                content,
+                tags,
+                snippet(fts_content, 2, '>>>', '<<<', '...', 15) as snippet,
+                bm25(fts_content) as rank
+            FROM fts_content
+            WHERE fts_content MATCH ?
+            ORDER BY rank
+            LIMIT ?""",
             (request.query, request.limit)
         )
 
@@ -118,7 +130,9 @@ async def fulltext_search(request: FulltextSearchRequest):
                 filename=row[0],
                 title=row[1],
                 content=row[2],
-                tags=row[3] or ""
+                tags=row[3] or "",
+                snippet=row[4],
+                rank=float(row[5])
             )
             for row in rows
         ]

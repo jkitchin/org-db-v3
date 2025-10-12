@@ -177,24 +177,27 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (title (alist-get 'title result))
                  (content (alist-get 'content result))
                  (tags (alist-get 'tags result))
-                 ;; Truncate content for display
-                 (title-width 30)
-                 (content-width 50)
-                 (display-title (if (> (length title) title-width)
-                                   (concat (substring title 0 (- title-width 3)) "...")
-                                 title))
-                 (display-content (replace-regexp-in-string
-                                  "[\n\r]+" " "
-                                  (if (> (length content) content-width)
-                                      (concat (substring content 0 (- content-width 3)) "...")
-                                    content)))
-                 ;; Pad to fixed width for alignment
-                 (padded-title (format (format "%%-%ds" title-width) display-title))
-                 (padded-content (format (format "%%-%ds" content-width) display-content))
-                 ;; Format with fixed-width columns: title | content | filename
-                 (candidate (format "%s | %s | %s"
-                                   padded-title
-                                   padded-content
+                 (snippet (alist-get 'snippet result))
+                 (rank (alist-get 'rank result))
+                 ;; Extract search term from snippet (text between >>> and <<<)
+                 (search-term (when (string-match ">>>\\([^<]+\\)<<<" snippet)
+                               (match-string 1 snippet)))
+                 ;; Clean snippet for display (remove markers and newlines)
+                 (clean-snippet (replace-regexp-in-string
+                                "[\n\r]+" " "
+                                (replace-regexp-in-string ">>>\\|<<<" "" snippet)))
+                 ;; Fixed widths for alignment
+                 (rank-width 8)
+                 (snippet-width 60)
+                 (display-snippet (if (> (length clean-snippet) snippet-width)
+                                     (concat (substring clean-snippet 0 (- snippet-width 3)) "...")
+                                   clean-snippet))
+                 (padded-snippet (format (format "%%-%ds" snippet-width) display-snippet))
+                 ;; Format with fixed-width columns: rank | snippet | filename
+                 (candidate (format "%*.2f | %s | %s"
+                                   rank-width
+                                   (abs rank)  ; bm25 scores are negative
+                                   padded-snippet
                                    (file-name-nondirectory filename))))
 
             ;; Store metadata
@@ -202,11 +205,14 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                     (list :file filename
                           :title title
                           :content content
-                          :tags tags)
+                          :tags tags
+                          :snippet snippet
+                          :search-term search-term
+                          :rank rank)
                     metadata-table)
             (push candidate candidates)))
 
-        ;; Reverse to show in order
+        ;; Keep order (already sorted by rank from server)
         (setq candidates (nreverse candidates))
 
         ;; Let user select
@@ -216,14 +222,19 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                          nil t)))
           (when selection
             (let* ((metadata (gethash selection metadata-table))
-                   (file (plist-get metadata :file)))
+                   (file (plist-get metadata :file))
+                   (search-term (plist-get metadata :search-term)))
               (when (and file (file-exists-p file))
                 (find-file file)
-                ;; Try to search for the title in the file
                 (goto-char (point-min))
-                (when (search-forward (plist-get metadata :title) nil t)
-                  (beginning-of-line)
-                  (recenter))))))))))
+                ;; Try to search for the matched term first, then title
+                (if (and search-term (search-forward search-term nil t))
+                    (progn
+                      (beginning-of-line)
+                      (recenter))
+                  (when (search-forward (plist-get metadata :title) nil t)
+                    (beginning-of-line)
+                    (recenter)))))))))))
 
 ;;;###autoload
 (defun org-db-v3-image-search (query &optional limit)
