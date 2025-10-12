@@ -113,7 +113,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (candidate (format "%-6.3f | %s | %s:%d"
                                    similarity
                                    padded-context
-                                   (file-name-nondirectory filename)
+                                   filename
                                    begin-line)))
 
             ;; Store metadata
@@ -224,7 +224,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (candidate (format "%8.2f | %s | %s"
                                    (abs rank)  ; bm25 scores are negative
                                    padded-snippet
-                                   (file-name-nondirectory filename))))
+                                   filename)))
 
             ;; Store metadata
             (puthash candidate
@@ -323,7 +323,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (text-part (format "%-6.3f | %s | %s"
                                     similarity
                                     padded-image
-                                    (file-name-nondirectory filename)))
+                                    filename))
                  ;; Add thumbnail if image exists
                  (candidate (if (and image-path (file-exists-p image-path))
                                (concat text-part
@@ -420,7 +420,7 @@ You can filter candidates dynamically using completing-read."
                  ;; Format with fixed-width columns: headline | filename:line
                  (candidate (format "%s | %s:%d"
                                    padded-title
-                                   (file-name-nondirectory filename)
+                                   filename
                                    line-number)))
 
             ;; Store metadata
