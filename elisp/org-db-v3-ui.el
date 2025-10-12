@@ -29,13 +29,13 @@
      :description "Search by keywords (FTS5)")
     ("h" "Headline search" org-db-v3-headline-search
      :description "Search/browse headlines and jump to them")
-    ("a" "Search at point" org-db-v3-search-at-point
+    ("p" "Search at point" org-db-v3-search-at-point
      :description "Search using text at point/region")]
    ["Image Search"
     ("i" "Search images" org-db-v3-image-search
      :description "Find images by text description")]]
   ["Agenda"
-   ("A" "Show agenda" org-db-v3-agenda
+   ("a" "Show agenda" org-db-v3-agenda
     :description "Show TODO items with deadlines and scheduled dates")]
   ["Management"
    ["Indexing"
