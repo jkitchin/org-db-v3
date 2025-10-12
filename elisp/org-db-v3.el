@@ -39,6 +39,12 @@
   :type 'boolean
   :group 'org-db-v3)
 
+(defcustom org-db-v3-auto-enable t
+  "Whether to automatically enable org-db-v3 when loading the package.
+When t, auto-indexing on save will be enabled for all org files."
+  :type 'boolean
+  :group 'org-db-v3)
+
 (defvar org-db-v3-server-process nil
   "Process running the org-db server.")
 
@@ -85,6 +91,10 @@
   (interactive)
   (remove-hook 'org-mode-hook #'org-db-v3-hook-function)
   (message "org-db v3 disabled"))
+
+;; Auto-enable if configured
+(when org-db-v3-auto-enable
+  (org-db-v3-enable))
 
 (provide 'org-db-v3)
 ;;; org-db-v3.el ends here
