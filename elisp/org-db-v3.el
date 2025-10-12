@@ -67,26 +67,23 @@
   (when (and (buffer-file-name)
              (or (string-suffix-p ".org" (buffer-file-name))
                  (string-suffix-p ".org_archive" (buffer-file-name))))
-    (org-db-v3-add-to-queue (buffer-file-name))
     (add-hook 'after-save-hook #'org-db-v3-after-save-hook nil t)))
 
 (defun org-db-v3-after-save-hook ()
   "Hook to run after saving an org file."
   (when (buffer-file-name)
-    (org-db-v3-add-to-queue (buffer-file-name))))
+    (org-db-v3-index-file-async (buffer-file-name))))
 
 (defun org-db-v3-enable ()
   "Enable org-db v3."
   (interactive)
   (add-hook 'org-mode-hook #'org-db-v3-hook-function)
-  (org-db-v3-start-queue-processing)
   (message "org-db v3 enabled"))
 
 (defun org-db-v3-disable ()
   "Disable org-db v3."
   (interactive)
   (remove-hook 'org-mode-hook #'org-db-v3-hook-function)
-  (org-db-v3-stop-queue-processing)
   (message "org-db v3 disabled"))
 
 (provide 'org-db-v3)

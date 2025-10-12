@@ -38,9 +38,7 @@
     ("U" "Update all open files" org-db-v3-update-all-buffers
      :description "Re-index all open org buffers")
     ("d" "Index directory" org-db-v3-index-directory
-     :description "Recursively index all org files in a directory")
-    ("Q" "Queue status" org-db-v3-queue-status
-     :description "Show indexing queue status")]
+     :description "Recursively index all org files in a directory")]
    ["Server"
     ("S" "Server status" org-db-v3-server-status
      :description "Check if server is running")
@@ -73,9 +71,11 @@
         (when (and (buffer-file-name)
                    (or (string-suffix-p ".org" (buffer-file-name))
                        (string-suffix-p ".org_archive" (buffer-file-name))))
-          (org-db-v3-add-to-queue (buffer-file-name))
+          (org-db-v3-index-file-async (buffer-file-name))
           (setq count (1+ count)))))
-    (message "Added %d org files to indexing queue" count)))
+    (message "Sent %d org file%s to server for indexing"
+             count
+             (if (= count 1) "" "s"))))
 
 ;;;###autoload
 (defun org-db-v3-server-status ()
