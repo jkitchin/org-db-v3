@@ -119,8 +119,7 @@ Also removes files that no longer exist from the database."
 
 (defun org-db-v3-delete-file-async (filename)
   "Delete FILENAME from the database asynchronously."
-  (plz 'delete (concat (org-db-v3-server-url) "/api/file")
-    :params `(("filename" . ,filename))
+  (plz 'delete (concat (org-db-v3-server-url) "/api/file?filename=" (url-hexify-string filename))
     :as #'json-read
     :then (lambda (response)
             (message "Removed %s from database" filename))
