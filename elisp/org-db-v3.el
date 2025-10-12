@@ -45,6 +45,11 @@ When t, auto-indexing on save will be enabled for all org files."
   :type 'boolean
   :group 'org-db-v3)
 
+(defcustom org-db-v3-debug nil
+  "Enable debug messages for org-db-v3 auto-indexing."
+  :type 'boolean
+  :group 'org-db-v3)
+
 (defvar org-db-v3-server-process nil
   "Process running the org-db server.")
 
@@ -69,27 +74,56 @@ When t, auto-indexing on save will be enabled for all org files."
 (require 'org-db-v3-ui)
 
 (defun org-db-v3-hook-function ()
-  "Hook function for org-mode files."
+  "Hook function for org-mode files.
+Adds buffer-local after-save-hook for auto-indexing."
   (when (and (buffer-file-name)
              (or (string-suffix-p ".org" (buffer-file-name))
                  (string-suffix-p ".org_archive" (buffer-file-name))))
+    (when org-db-v3-debug
+      (message "org-db-v3: Adding after-save-hook to buffer %s" (buffer-name)))
     (add-hook 'after-save-hook #'org-db-v3-after-save-hook nil t)))
 
 (defun org-db-v3-after-save-hook ()
-  "Hook to run after saving an org file."
+  "Hook to run after saving an org file.
+Automatically indexes the file after save."
   (when (buffer-file-name)
+    (when org-db-v3-debug
+      (message "org-db-v3: After-save hook triggered for %s" (buffer-file-name)))
     (org-db-v3-index-file-async (buffer-file-name))))
 
 (defun org-db-v3-enable ()
-  "Enable org-db v3."
+  "Enable org-db v3.
+Adds org-mode-hook for future org files and enables auto-indexing
+for all currently open org buffers."
   (interactive)
   (add-hook 'org-mode-hook #'org-db-v3-hook-function)
-  (message "org-db v3 enabled"))
+
+  ;; Also enable for already-open org buffers
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'org-mode)
+        (when org-db-v3-debug
+          (message "org-db-v3: Enabling auto-indexing for already-open buffer %s" (buffer-name)))
+        (org-db-v3-hook-function))))
+
+  (message "org-db v3 enabled (auto-indexing on save for %d open org buffers)"
+           (length (seq-filter (lambda (buf)
+                                 (with-current-buffer buf
+                                   (derived-mode-p 'org-mode)))
+                               (buffer-list)))))
 
 (defun org-db-v3-disable ()
-  "Disable org-db v3."
+  "Disable org-db v3.
+Removes org-mode-hook and after-save-hooks from all org buffers."
   (interactive)
   (remove-hook 'org-mode-hook #'org-db-v3-hook-function)
+
+  ;; Remove after-save-hook from all org buffers
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'org-mode)
+        (remove-hook 'after-save-hook #'org-db-v3-after-save-hook t))))
+
   (message "org-db v3 disabled"))
 
 ;; Auto-enable if configured
