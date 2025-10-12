@@ -57,7 +57,8 @@
 ;;;###autoload
 (defun org-db-v3-reindex-database ()
   "Reindex all files currently in the database.
-Fetches the list of files from the server and reindexes each one."
+Fetches the list of files from the server and reindexes each one.
+Also removes files that no longer exist from the database."
   (interactive)
   (org-db-v3-ensure-server)
 
@@ -65,22 +66,66 @@ Fetches the list of files from the server and reindexes each one."
     :as #'json-read
     :then (lambda (response)
             (let* ((files (alist-get 'files response))
-                   (count (length files)))
+                   (count (length files))
+                   (missing-files nil)
+                   (existing-files nil))
+
+              ;; Classify files as existing or missing
+              (dotimes (i count)
+                (let ((filename (alist-get 'filename (aref files i))))
+                  (if (file-exists-p filename)
+                      (push filename existing-files)
+                    (push filename missing-files))))
+
               (if (zerop count)
                   (message "No files found in database")
-                (when (yes-or-no-p (format "Reindex %d file%s? "
-                                           count
-                                           (if (= count 1) "" "s")))
-                  (message "Reindexing %d file%s..." count (if (= count 1) "" "s"))
-                  (dotimes (i count)
-                    (let ((filename (alist-get 'filename (aref files i))))
-                      (when (file-exists-p filename)
-                        (org-db-v3-index-file-async filename))))
-                  (message "Sent %d file%s to server for reindexing"
-                           count
-                           (if (= count 1) "" "s"))))))
+
+                ;; Show summary and confirm
+                (let ((msg (format "Reindex %d existing file%s%s? "
+                                  (length existing-files)
+                                  (if (= (length existing-files) 1) "" "s")
+                                  (if missing-files
+                                      (format " (and remove %d missing file%s)"
+                                             (length missing-files)
+                                             (if (= (length missing-files) 1) "" "s"))
+                                    ""))))
+                  (when (yes-or-no-p msg)
+                    ;; Reindex existing files
+                    (when existing-files
+                      (message "Reindexing %d file%s..." (length existing-files)
+                              (if (= (length existing-files) 1) "" "s"))
+                      (dolist (filename existing-files)
+                        (org-db-v3-index-file-async filename)))
+
+                    ;; Delete missing files from database
+                    (when missing-files
+                      (message "Removing %d missing file%s from database..."
+                              (length missing-files)
+                              (if (= (length missing-files) 1) "" "s"))
+                      (dolist (filename missing-files)
+                        (org-db-v3-delete-file-async filename)))
+
+                    ;; Final summary
+                    (message "Reindex complete: %d file%s reindexed%s"
+                            (length existing-files)
+                            (if (= (length existing-files) 1) "" "s")
+                            (if missing-files
+                                (format ", %d file%s removed"
+                                       (length missing-files)
+                                       (if (= (length missing-files) 1) "" "s"))
+                              "")))))))
     :else (lambda (error)
             (message "Error fetching file list: %s" (plz-error-message error)))))
+
+(defun org-db-v3-delete-file-async (filename)
+  "Delete FILENAME from the database asynchronously."
+  (plz 'delete (concat (org-db-v3-server-url) "/api/file")
+    :params `(("filename" . ,filename))
+    :as #'json-read
+    :then (lambda (response)
+            (message "Removed %s from database" filename))
+    :else (lambda (error)
+            (message "Error removing %s: %s" filename (plz-error-message error)))))
 
 (provide 'org-db-v3-client)
 ;;; org-db-v3-client.el ends here

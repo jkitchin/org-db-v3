@@ -34,6 +34,36 @@ async def get_files() -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.delete("/file")
+async def delete_file(filename: str) -> Dict[str, Any]:
+    """Delete a file and all its associated data from the database."""
+    try:
+        cursor = db.conn.cursor()
+
+        # Get file ID
+        cursor.execute("SELECT rowid FROM files WHERE filename = ?", (filename,))
+        row = cursor.fetchone()
+
+        if not row:
+            raise HTTPException(status_code=404, detail=f"File not found: {filename}")
+
+        file_id = row[0]
+
+        # Delete the file (CASCADE will handle related data)
+        cursor.execute("DELETE FROM files WHERE rowid = ?", (file_id,))
+        db.conn.commit()
+
+        return {
+            "status": "deleted",
+            "filename": filename,
+            "message": f"Successfully deleted {filename} and all associated data"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/file", response_model=IndexFileResponse)
 async def index_file(request: IndexFileRequest):
     """Index an org file."""
