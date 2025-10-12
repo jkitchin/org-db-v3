@@ -27,3 +27,7 @@ build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Development files
+tasks.org
+reload.el

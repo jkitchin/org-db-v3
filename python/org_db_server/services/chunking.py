@@ -23,41 +23,75 @@ def chunk_text(
     chunks = []
 
     if method == "paragraph":
-        # Split by blank lines (paragraphs)
-        paragraphs = re.split(r'\n\s*\n', text)
-        current_line = 0
+        # Split by blank lines (paragraphs) while tracking original positions
+        current_line = 1  # Line numbers start at 1
+        current_pos = 0
 
-        for para in paragraphs:
-            if para.strip():
-                line_count = para.count('\n') + 1
+        # Find all paragraph boundaries
+        blank_line_pattern = re.compile(r'\n\s*\n')
+
+        for match in blank_line_pattern.finditer(text):
+            # Extract paragraph from current position to blank line
+            para_text = text[current_pos:match.start()]
+
+            if para_text.strip():
+                # Count lines from start of text to start of this paragraph
+                lines_before = text[:current_pos].count('\n')
+                begin_line = lines_before + 1  # +1 because lines start at 1
+
+                # Count lines in this paragraph
+                line_count = para_text.count('\n') + 1
+                end_line = begin_line + line_count - 1
+
                 chunks.append({
-                    "text": para.strip(),
+                    "text": para_text.strip(),
                     "chunk_type": "paragraph",
-                    "begin_line": current_line,
-                    "end_line": current_line + line_count
+                    "begin_line": begin_line,
+                    "end_line": end_line
                 })
-                current_line += line_count + 1  # +1 for blank line
+
+            # Move past the blank line(s)
+            current_pos = match.end()
+
+        # Handle the last paragraph (after the last blank line)
+        if current_pos < len(text):
+            para_text = text[current_pos:]
+            if para_text.strip():
+                lines_before = text[:current_pos].count('\n')
+                begin_line = lines_before + 1
+                line_count = para_text.count('\n') + 1
+                end_line = begin_line + line_count - 1
+
+                chunks.append({
+                    "text": para_text.strip(),
+                    "chunk_type": "paragraph",
+                    "begin_line": begin_line,
+                    "end_line": end_line
+                })
 
     elif method == "fixed":
-        # Fixed-size chunks with overlap
+        # Fixed-size chunks with overlap, tracking absolute line numbers
         pos = 0
-        line = 0
 
         while pos < len(text):
             end_pos = min(pos + chunk_size, len(text))
             chunk_text = text[pos:end_pos]
 
-            # Count lines in chunk
+            # Calculate absolute line numbers
+            lines_before = text[:pos].count('\n')
+            begin_line = lines_before + 1  # Lines start at 1
+
+            # Count lines in this chunk
             line_count = chunk_text.count('\n')
+            end_line = begin_line + line_count
 
             chunks.append({
                 "text": chunk_text,
                 "chunk_type": "fixed",
-                "begin_line": line,
-                "end_line": line + line_count
+                "begin_line": begin_line,
+                "end_line": end_line
             })
 
-            line += line_count
             pos = end_pos - chunk_overlap if end_pos < len(text) else end_pos
 
     return chunks

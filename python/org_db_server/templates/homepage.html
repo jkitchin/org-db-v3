@@ -121,6 +121,10 @@
             background: #10b981;
         }
 
+        .endpoint .method.delete {
+            background: #ef4444;
+        }
+
         .endpoint .path {
             font-family: monospace;
             color: #374151;
@@ -203,6 +207,20 @@
         </header>
 
         <div class="content">
+            <!-- Database Information Section -->
+            <div class="section">
+                <h2>💾 Database Information</h2>
+                <div class="stat-card" style="max-width: 100%;">
+                    <h3>Database Location</h3>
+                    <div style="font-family: monospace; color: #374151; margin-top: 10px; font-size: 1em;" id="db-location">
+                        Loading...
+                    </div>
+                    <p style="color: #6b7280; margin-top: 10px; font-size: 0.9em;">
+                        This SQLite database stores all indexed org files, embeddings, and metadata.
+                    </p>
+                </div>
+            </div>
+
             <!-- Statistics Section -->
             <div class="section">
                 <h2>📊 Statistics</h2>
@@ -262,57 +280,135 @@
                 <div class="endpoint">
                     <span class="method">GET</span>
                     <span class="path">/health</span>
-                    <div class="description">Health check endpoint</div>
+                    <div class="description">Server health check - returns status and uptime</div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method post">POST</span>
                     <span class="path">/api/file</span>
-                    <div class="description">Index an org file with headlines, links, keywords, and images</div>
+                    <div class="description">
+                        Index an org file - accepts JSON with filename, md5, file_size, headlines, links, keywords, src_blocks, and images.
+                        Automatically generates embeddings and stores in database.
+                    </div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method post">POST</span>
                     <span class="path">/api/search/semantic</span>
-                    <div class="description">Semantic search using text embeddings</div>
+                    <div class="description">
+                        Semantic search by meaning - accepts <code>query</code> (string), <code>limit</code> (int, default 10),
+                        and optional <code>model</code>. Returns ranked results with similarity scores, filenames, and line numbers.
+                    </div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method post">POST</span>
                     <span class="path">/api/search/fulltext</span>
-                    <div class="description">Full-text search using SQLite FTS5</div>
+                    <div class="description">
+                        Full-text keyword search using SQLite FTS5 - accepts <code>query</code> (string) and <code>limit</code> (int, default 10).
+                        Returns matching content with snippets and character positions.
+                    </div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method post">POST</span>
                     <span class="path">/api/search/images</span>
-                    <div class="description">Search images by text description using CLIP</div>
+                    <div class="description">
+                        Search images by text description using CLIP embeddings - accepts <code>query</code> (string) and <code>limit</code> (int, default 10).
+                        Returns images with similarity scores and file locations.
+                    </div>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method post">POST</span>
+                    <span class="path">/api/search/headlines</span>
+                    <div class="description">
+                        Search org headlines - accepts <code>query</code> (string) and <code>limit</code> (int, default 10).
+                        Returns matching headlines with their full paths and metadata.
+                    </div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method">GET</span>
-                    <span class="path">/api/stats</span>
-                    <div class="description">Get database statistics and metrics</div>
+                    <span class="path">/api/stats/</span>
+                    <div class="description">Get comprehensive database statistics including file counts, embeddings, links, and database size</div>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method">GET</span>
+                    <span class="path">/api/stats/files</span>
+                    <div class="description">Get list of all indexed files with timestamps</div>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method delete">DELETE</span>
+                    <span class="path">/api/file?filename=/path/to/file.org</span>
+                    <div class="description">Remove a file and all its associated data from the database</div>
+                </div>
+
+                <div class="endpoint">
+                    <span class="method post">POST</span>
+                    <span class="path">/api/agenda</span>
+                    <div class="description">
+                        Get agenda items (TODOs, deadlines, scheduled) - accepts <code>days_ahead</code> (int, default 7).
+                        Returns TODO items with their deadlines and scheduled dates.
+                    </div>
                 </div>
 
                 <div class="endpoint">
                     <span class="method">GET</span>
                     <span class="path">/docs</span>
-                    <div class="description">Interactive API documentation (Swagger UI)</div>
+                    <div class="description">Interactive API documentation with Swagger UI - test endpoints directly in your browser</div>
                 </div>
             </div>
 
             <!-- Getting Started Section -->
             <div class="section">
                 <h2>🚀 Getting Started</h2>
-                <p>From Emacs, use the following commands:</p>
-                <ul style="margin-left: 20px; margin-top: 10px;">
-                    <li><code>M-x org-db-v3-enable</code> - Enable automatic indexing</li>
-                    <li><code>M-x org-db</code> - Open the search menu</li>
-                    <li><code>M-x org-db-v3-semantic-search</code> - Search by meaning</li>
-                    <li><code>M-x org-db-v3-fulltext-search</code> - Search by keywords</li>
-                    <li><code>M-x org-db-v3-image-search</code> - Search images by description</li>
+
+                <h3 style="color: #667eea; margin-top: 20px; margin-bottom: 10px;">1. Quick Start from Emacs</h3>
+                <p style="margin-bottom: 10px;">Open the main menu with:</p>
+                <div style="background: #f9fafb; padding: 15px; border-radius: 5px; border-left: 4px solid #667eea; margin-bottom: 20px;">
+                    <code>M-x org-db</code> or <code>H-v</code>
+                </div>
+
+                <h3 style="color: #667eea; margin-top: 20px; margin-bottom: 10px;">2. Search Commands</h3>
+                <ul style="margin-left: 20px; line-height: 1.8;">
+                    <li><code>v</code> - <strong>Semantic search</strong> - Find content by meaning using embeddings</li>
+                    <li><code>k</code> - <strong>Full-text search</strong> - Traditional keyword search with FTS5</li>
+                    <li><code>h</code> - <strong>Headline search</strong> - Browse and jump to org headlines</li>
+                    <li><code>i</code> - <strong>Image search</strong> - Find images by text description (CLIP)</li>
+                    <li><code>p</code> - <strong>Search at point</strong> - Search using selected text or sentence at point</li>
                 </ul>
+
+                <h3 style="color: #667eea; margin-top: 20px; margin-bottom: 10px;">3. Indexing Commands</h3>
+                <ul style="margin-left: 20px; line-height: 1.8;">
+                    <li><code>u</code> - Update current file</li>
+                    <li><code>U</code> - Update all open org buffers</li>
+                    <li><code>d</code> - Index entire directory</li>
+                    <li><code>r</code> - Reindex all files in database</li>
+                </ul>
+
+                <h3 style="color: #667eea; margin-top: 20px; margin-bottom: 10px;">4. Other Features</h3>
+                <ul style="margin-left: 20px; line-height: 1.8;">
+                    <li><code>a</code> - <strong>Agenda</strong> - View TODOs, deadlines, and scheduled items</li>
+                    <li><code>f</code> - <strong>Open file</strong> - Browse and open any file in the database</li>
+                    <li><code>W</code> - Open this web interface</li>
+                    <li><code>L</code> - View server logs</li>
+                </ul>
+
+                <h3 style="color: #667eea; margin-top: 20px; margin-bottom: 10px;">5. First Time Setup</h3>
+                <div style="background: #f9fafb; padding: 15px; border-radius: 5px; border-left: 4px solid #10b981; margin-top: 10px;">
+                    <p style="margin-bottom: 10px;">Add to your Emacs config:</p>
+                    <pre style="background: #e5e7eb; padding: 10px; border-radius: 3px; overflow-x: auto;"><code>(add-to-list 'load-path "/path/to/org-db-v3/elisp")
+(require 'org-db-v3)
+
+;; Bind the menu to a convenient key
+(global-set-key (kbd "H-v") 'org-db-menu)
+
+;; Auto-start server when Emacs starts (optional)
+(setq org-db-v3-auto-start-server t)</code></pre>
+                </div>
             </div>
         </div>
 
@@ -329,12 +425,17 @@
         // Fetch and display statistics
         async function loadStats() {
             try {
-                const response = await fetch('/api/stats');
+                const response = await fetch('/api/stats/');
                 const stats = await response.json();
 
                 // Update status
                 document.getElementById('status').textContent = 'Server Running';
                 document.getElementById('status').style.background = '#10b981';
+
+                // Update database location
+                if (stats.db_path) {
+                    document.getElementById('db-location').textContent = stats.db_path;
+                }
 
                 // Update stats grid
                 const statsGrid = document.getElementById('stats-grid');

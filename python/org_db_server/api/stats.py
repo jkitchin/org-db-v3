@@ -61,8 +61,9 @@ async def get_stats():
         for row in cursor.fetchall()
     ]
 
-    # Database file size
+    # Database file size and location
     import os
+    stats["db_path"] = str(settings.db_path)
     if os.path.exists(settings.db_path):
         stats["db_size_bytes"] = os.path.getsize(settings.db_path)
         stats["db_size_mb"] = round(stats["db_size_bytes"] / (1024 * 1024), 2)
@@ -71,3 +72,21 @@ async def get_stats():
         stats["db_size_mb"] = 0
 
     return stats
+
+@router.get("/files", response_model=Dict[str, Any])
+async def get_files():
+    """Get all files in the database."""
+    cursor = db.conn.cursor()
+
+    cursor.execute("""
+        SELECT filename, indexed_at
+        FROM files
+        ORDER BY indexed_at DESC
+    """)
+
+    files = [
+        {"filename": row[0], "indexed_at": row[1]}
+        for row in cursor.fetchall()
+    ]
+
+    return {"files": files, "count": len(files)}

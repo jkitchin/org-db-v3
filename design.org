@@ -3,93 +3,155 @@
 :GPTEL_MODEL: claude-sonnet-4-20250514
 :GPTEL_BACKEND: Claude
 :GPTEL_SYSTEM: You are a large language model working in Emacs and a helpful assistant. Respond concisely using org-mode syntax.\n\nWhen writing Python code, use this template:\n\n#+BEGIN_SRC jupyter-python\n<python-code>\n#+END_SRC\n
-:GPTEL_BOUNDS: ((response (585 812) (938 1041) (1123 1472)))
+:GPTEL_BOUNDS: ((response (1095 5112)))
 :END:
 * org-db v3
 
-Add an elisp block to add /Users/jkitchin/Dropbox/emacs/scimax/org-db-v3/elisp/ to the load-path and then to load elisp/org-db-v3.el
+The goal in this project is to make a new org-db package that consolidates the functionality from:
 
-Here's an elisp block to add the directory to your load-path and load the org-db-v3 module:
+- [[./../org-db.el]]
+- [[../org-db-fulltext.el]]
+- [[../org-db-agenda.el]]
+- [[../org-db-images.el]]
+- [[../org-db-audio.el]]
 
-#+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "/Users/jkitchin/Dropbox/emacs/scimax/org-db-v3/elisp/")
-(require 'org-db-v3)
-#+END_SRC
+into a new elisp and python package. The python package will implement a FastAPI server as a front end to libsql to enable full text and semantic search, as well as searching images and audio. The elisp package will provide interactive commands to do the searching that can be accessed conveniently from a transient menu.
 
-#+RESULTS:
-: org-db-v3
+Review the files in those links and summarize in an organized way the features that are currently part of org-db.
+
+Based on the provided code, here's an organized summary of org-db's current features:
+
+* org-db v3 - Current Feature Summary
+
+** Core Database Architecture
+
+*** *Database Management*
+- SQLite-based storage with foreign key constraints
+- Automatic database setup and table creation
+- File MD5 checksums for change detection
+- Queue-based processing during Emacs idle time
+- Incremental updates when files are saved
+
+*** *Data Models*
+- *Files*: Tracks org files with metadata and timestamps
+- *Headlines*: Org headings with TODO states, priorities, tags, properties
+- *Links*: All org-mode links with types, paths, descriptions
+- *Properties*: Key-value pairs from org headings
+- *Keywords*: File-level keywords (#+TITLE, #+AUTHOR, etc.)
+- *Tags*: Heading tags with many-to-many relationships
+- *Timestamps*: Scheduled/deadline dates and standalone timestamps
+
+** Search and Discovery Features
+
+*** *Content Search*
+- *Headlines*: Find headings by title, TODO state, tags, priority
+- *Properties*: Search by property names and values
+- *Links*: Browse and navigate to links across all files
+- *Source Blocks*: Search code blocks by language and content
+- *Keywords*: Find files by keyword values
+
+*** *Pattern-Based Search*
+- *Hashtags* (=#tag=): Custom tagging system with regex matching
+- *@-labels* (=@person=): People/entity references
+- *Email addresses*: Automatic extraction and search
+- *Targets*: Org radio targets and link destinations
+
+*** *Specialized Views*
+- *Contacts*: Headings with EMAIL properties
+- *Locations*: Headings with ADDRESS properties
+- *Bookmarks*: Headings with URL properties
+- *Recent files*: Files sorted by last modification
+
+** Extended Functionality Modules
+
+*** *Full-Text Search* (=org-db-fulltext.el=)
+- FTS5 virtual table for content search
+- Dynamic candidate completion
+- Snippet-based results with context
+- Project-scoped search capability
+
+*** *Agenda System* (=org-db-agenda.el=)
+- Alternative to org-agenda for large file collections
+- Deadline and scheduled item tracking
+- Calendar visualization with color coding
+- Bulk operations (mark done, archive, ignore)
+- Integration with standard org-agenda
+
+*** *Image Search* (=org-db-images.el=)
+- OCR text extraction using Tesseract
+- Image thumbnail previews in search results
+- Text search within image content
+- Support for PNG/JPG files
+
+*** *Audio/Video Search* (=org-db-audio.el=)
+- Speech-to-text transcription
+- Audio/video file content indexing
+- Integration with SEM (Scimax Editmarks)
+- Support for AIFF and MOV files
+
+** User Interface and Navigation
+
+*** *Interactive Commands*
+- =org-db-headings=: Main headline browser
+- =org-db-contacts=: Contact management
+- =org-db-locations=: Location/address search
+- =org-db-hashtags=: Tag-based navigation
+- =org-db-@=: People/entity search
+- =org-db-links=: Link browser
+- =org-db-files=: File browser
+- =org-db-agenda=: Task/deadline management
+
+*** *Integration Features*
+- Ivy/Counsel completion interface
+- Multi-action support for bulk operations
+- Transformer functions for enhanced display
+- Backlink discovery
+- org-id link resolution override
+- Hydra menu for quick access
+
+** Maintenance and Utilities
+
+*** *Database Management*
+- File change detection and auto-updates
+- Queue processing for background updates
+- Database cleaning (remove missing files)
+- Complete database reset
+- Index entire directories recursively
+- Project-based indexing
+
+*** *Performance Optimizations*
+- Idle-time processing to avoid blocking
+- MD5-based change detection
+- Configurable ignore patterns for files/properties
+- Separate databases for different content types
+
+** Configuration Options
+
+*** *Customizable Settings*
+- Database location and naming
+- Update function pipeline
+- File ignore patterns
+- Tag/property exclusions
+- Keyword filtering
+- Debug logging
+
+This architecture provides a comprehensive alternative to org-agenda that scales well with thousands of org files while maintaining rich search and discovery capabilities across multiple content types.
 
 
-#+attr_org: :width 800
-[[./screenshots/date-11-10-2025-time-19-42-00.png]]
+* New features
 
-#+BEGIN_SRC emacs-lisp
-(add-to-list 'load-path "/Users/jkitchin/Dropbox/emacs/scimax/org-db-v3/elisp/")
-(require 'org-db-v3 t)
-#+END_SRC
+** replace sqlite with libsql
 
-Write an elisp block to load all the elisp files in the elisp folder
+Use similar table structures, but update them for new functionality
 
-Here's an elisp block to load all the elisp files in the elisp folder:
+** semantic vector search
 
-#+BEGIN_SRC emacs-lisp
-(load-file "./elisp/org-db-v3-client.el")
-(load-file "elisp/org-db-v3-parse.el")
-(load-file "elisp/org-db-v3-search.el")
-(load-file "elisp/org-db-v3-server.el")
-(load-file "elisp/org-db-v3-ui.el")
-(load-file "elisp/org-db-v3.el")
+Add a table that stores chunks, line positions and embeddings for each document for vector search
 
-(org-db-menu)
-#+END_SRC
+** async on the Emacs side
 
-#+RESULTS:
-| transient--resume-which-key-mode |
+I don't want Emacs to be blocked while indexing since that will be done on the Python server side
 
-elisp:org-db-menu
+** CLIP image search
 
-* TODO v3 tasks
-
-** DONE No images seem to be found.
-CLOSED: [2025-10-12 Sun 08:10]
-
-Describe how the images are found in the files, and how they are passed to the server.
-
-** DONE image search with thumbnails
-CLOSED: [2025-10-12 Sun 08:10]
-
-** full text is not working
-
-** line numbers seem to be wrong in semantic search
-
-they are all listed as 0. Confirm that the line numbers are being stored for chunks and getting returned in the search
-
-** DONE use completing read for search and open file
-CLOSED: [2025-10-12 Sun 08:04]
-
-For the completing read candidates in the search functions, create a tabular string like this (Python f-string syntax)
-
-{score:<6.2f} | {context:<20s} | {fullpath}:{lineno}
-
-The point is to make them look nicer with each part in columns that are aligned
-
-** DONE update default the clip model to sentence transformers
-CLOSED: [2025-10-12 Sun 07:57]
-
-model = SentenceTransformer("clip-ViT-B-32")
-
-
-** DONE add indexing functionality
-CLOSED: [2025-10-12 Sun 07:55]
-
-** DONE full text not finding results
-CLOSED: [2025-10-12 Sun 07:53]
-
-** DONE stats?
-CLOSED: [2025-10-12 Sun 07:18]
-
-** DONE add server homepage
-CLOSED: [2025-10-12 Sun 07:18]
-
-** DONE no transient
-CLOSED: [2025-10-12 Sun 07:22]
+store clip embeddings to search images by description
