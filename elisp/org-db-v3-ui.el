@@ -112,16 +112,16 @@ Prompts user to select from known projects, with current project as default."
   ["Search Scope (applies to next search only)"
    ("a" "All files" org-db-v3-scope-all
     :description "Search all indexed files"
-    :transient t)
+    :transient transient--do-return)
    ("d" "Directory..." org-db-v3-scope-directory
     :description "Limit to specific directory"
-    :transient t)
+    :transient transient--do-return)
    ("p" "Current project" org-db-v3-scope-project
     :description "Limit to Projectile project"
-    :transient t)
+    :transient transient--do-return)
    ("t" "Tag/Keyword..." org-db-v3-scope-tag
     :description "Limit to files with keyword"
-    :transient t)])
+    :transient transient--do-return)])
 
 ;;;###autoload (autoload 'org-db-menu "org-db-v3-ui" nil t)
 (transient-define-prefix org-db-menu ()
