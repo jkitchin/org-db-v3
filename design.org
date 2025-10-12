@@ -3,7 +3,7 @@
 :GPTEL_MODEL: claude-sonnet-4-20250514
 :GPTEL_BACKEND: Claude
 :GPTEL_SYSTEM: You are a large language model working in Emacs and a helpful assistant. Respond concisely using org-mode syntax.\n\nWhen writing Python code, use this template:\n\n#+BEGIN_SRC jupyter-python\n<python-code>\n#+END_SRC\n
-:GPTEL_BOUNDS: ((response (562 789)))
+:GPTEL_BOUNDS: ((response (585 812) (938 1041) (1123 1457)))
 :END:
 * org-db v3
 
@@ -16,37 +16,62 @@ Here's an elisp block to add the directory to your load-path and load the org-db
 (require 'org-db-v3)
 #+END_SRC
 
+#+RESULTS:
+: org-db-v3
+
 
 #+attr_org: :width 800
 [[./screenshots/date-11-10-2025-time-19-42-00.png]]
 
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "/Users/jkitchin/Dropbox/emacs/scimax/org-db-v3/elisp/")
+(require 'org-db-v3 t)
+#+END_SRC
 
+Write an elisp block to load all the elisp files in the elisp folder
+
+Here's an elisp block to load all the elisp files in the elisp folder:
+
+#+BEGIN_SRC emacs-lisp
+(load-file "./elisp/org-db-v3-client.el")
+(load-file "elisp/org-db-v3-parse.el")
+(load-file "elisp/org-db-v3-search.el")
+(load-file "elisp/org-db-v3-server.el")
+(load-file "elisp/org-db-v3-ui.el")
+(load-file "elisp/org-db-v3.el")
+#+END_SRC
+
+#+RESULTS:
+: t
+
+elisp:org-db-menu
 
 * TODO v3 tasks
 
-
-elisp:org-db-v3-semantic-search  are these real results
-
-elisp:org-db-v3-fulltext-search no result found
-
-elisp:org-db-v3-image-search has an error
-
-elisp:org-db-v3-start-server
-
-elisp:org-db-v3-stop-server  does it really stop?
-
 ** use completing read for search and open file
+
+For the completing read candidates in the search functions, create a tabular string like this (Python f-string syntax)
+
+{score:<6.2f} | {context:<20s} | {fullpath}:{lineno}
 
 ** image search with thumbnails
 
-** stats?
+No images seem to be found
 
 ** isn't there a server cli?
 
 ** add indexing functionality
 
-** add server homepage
-
 ** update default clip model to sentence transformers
 
-** no transient
+** DONE full text not finding results
+CLOSED: [2025-10-12 Sun 07:53]
+
+** DONE stats?
+CLOSED: [2025-10-12 Sun 07:18]
+
+** DONE add server homepage
+CLOSED: [2025-10-12 Sun 07:18]
+
+** DONE no transient
+CLOSED: [2025-10-12 Sun 07:22]

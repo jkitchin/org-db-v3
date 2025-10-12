@@ -54,5 +54,33 @@
                  count
                  (if (= count 1) "" "s"))))))
 
+;;;###autoload
+(defun org-db-v3-reindex-database ()
+  "Reindex all files currently in the database.
+Fetches the list of files from the server and reindexes each one."
+  (interactive)
+  (org-db-v3-ensure-server)
+
+  (plz 'get (concat (org-db-v3-server-url) "/api/files")
+    :as #'json-read
+    :then (lambda (response)
+            (let* ((files (alist-get 'files response))
+                   (count (length files)))
+              (if (zerop count)
+                  (message "No files found in database")
+                (when (yes-or-no-p (format "Reindex %d file%s? "
+                                           count
+                                           (if (= count 1) "" "s")))
+                  (message "Reindexing %d file%s..." count (if (= count 1) "" "s"))
+                  (dotimes (i count)
+                    (let ((filename (alist-get 'filename (aref files i))))
+                      (when (file-exists-p filename)
+                        (org-db-v3-index-file-async filename))))
+                  (message "Sent %d file%s to server for reindexing"
+                           count
+                           (if (= count 1) "" "s"))))))
+    :else (lambda (error)
+            (message "Error fetching file list: %s" (plz-error-message error)))))
+
 (provide 'org-db-v3-client)
 ;;; org-db-v3-client.el ends here

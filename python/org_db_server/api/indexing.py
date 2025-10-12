@@ -1,6 +1,7 @@
 """Indexing API endpoints."""
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
+from typing import List, Dict, Any
 
 from org_db_server.models.schemas import IndexFileRequest, IndexFileResponse
 from org_db_server.services.database import Database
@@ -11,10 +12,27 @@ from org_db_server.config import settings
 from pathlib import Path
 import os
 
-router = APIRouter(prefix="/api/index", tags=["indexing"])
+router = APIRouter(prefix="/api", tags=["indexing"])
 
 # Global database instance (will be improved later with dependency injection)
 db = Database(settings.db_path)
+
+@router.get("/files")
+async def get_files() -> Dict[str, Any]:
+    """Get list of all files in the database."""
+    try:
+        cursor = db.conn.cursor()
+        cursor.execute("SELECT filename, indexed_at FROM files ORDER BY indexed_at DESC")
+        rows = cursor.fetchall()
+
+        files = [
+            {"filename": row[0], "indexed_at": row[1]}
+            for row in rows
+        ]
+
+        return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/file", response_model=IndexFileResponse)
 async def index_file(request: IndexFileRequest):

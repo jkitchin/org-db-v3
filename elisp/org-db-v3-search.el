@@ -254,16 +254,16 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (similarity (alist-get 'similarity_score result))
                  ;; Format: "score | image-filename | org-filename"
                  (candidate (format "%.3f | %s | %s"
-                                   similarity
-                                   (file-name-nondirectory image-path)
-                                   (file-name-nondirectory filename))))
+                                    similarity
+                                    (file-name-nondirectory image-path)
+                                    (file-name-nondirectory filename))))
 
             ;; Store metadata
             (puthash candidate
-                    (list :image-path image-path
-                          :file filename
-                          :similarity similarity)
-                    metadata-table)
+                     (list :image-path image-path
+                           :file filename
+                           :similarity similarity)
+                     metadata-table)
             (push candidate candidates)))
 
         ;; Reverse to show best results first
@@ -271,10 +271,10 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
 
         ;; Let user select
         (let ((selection (completing-read
-                         (format "Image results (%s, %d found): "
-                                model-used (length results))
-                         candidates
-                         nil t)))
+                          (format "Image results (%s, %d found): "
+                                  model-used (length results))
+                          candidates
+                          nil t)))
           (when selection
             (let* ((metadata (gethash selection metadata-table))
                    (image-path (plist-get metadata :image-path))
@@ -286,7 +286,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                 (goto-char (point-min))
                 (when (search-forward (file-name-nondirectory image-path) nil t)
                   (beginning-of-line)
-                  (recenter)))))))))))
+                  (recenter))))))))))
 
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here
