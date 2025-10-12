@@ -110,47 +110,45 @@ Returns plist with :filename_pattern and/or :keyword."
 
 ;;;###autoload (autoload 'org-db-menu "org-db-v3-ui" nil t)
 (transient-define-prefix org-db-menu ()
-  [:description (lambda ()
-                  (format "org-db v3 [Scope: %s]"
-                          (org-db-v3--scope-description)))
+  [:description (lambda () (format "org-db v3 [Scope: %s]" (org-db-v3--scope-description)))
    ["Search"
-   ["Text Search"
-    ("v" "Semantic search" org-db-v3-semantic-search
-     :description "Search by meaning using embeddings")
-    ("k" "Full-text search" org-db-v3-fulltext-search
-     :description "Search by keywords (FTS5)")
-    ("h" "Headline search" org-db-v3-headline-search
-     :description "Search/browse headlines and jump to them")
-    ("p" "Search at point" org-db-v3-search-at-point
-     :description "Search using text at point/region")]
-   ["Image Search"
-    ("i" "Search images" org-db-v3-image-search
-     :description "Find images by text description")]
-   ["Files"
-    ("f" "Open file from db" org-db-v3-open-file
-     :description "Browse and open files in database")]]
-  ["Agenda"
-   ("a" "Show agenda" org-db-v3-agenda
-    :description "Show TODO items with deadlines and scheduled dates")]
-  ["Management"
-   ["Indexing"
-    ("u" "Update current file" org-db-v3-update-current-file
-     :description "Re-index the current org file")
-    ("U" "Update all open files" org-db-v3-update-all-buffers
-     :description "Re-index all open org buffers")
-    ("d" "Index directory" org-db-v3-index-directory
-     :description "Recursively index all org files in a directory")
-    ("r" "Reindex database" org-db-v3-reindex-database
-     :description "Reindex all files currently in the database")]
-   ["Server"
-    ("S" "Server status" org-db-v3-server-status
-     :description "Check if server is running")
-    ("R" "Restart server" org-db-v3-restart-server
-     :description "Stop and start the server")
-    ("L" "View server logs" org-db-v3-view-logs
-     :description "Open server log buffer")
-    ("W" "Open web interface" org-db-v3-open-web-interface
-     :description "Open server homepage in browser")]]
+    ["Text Search"
+     ("v" "Semantic search" org-db-v3-semantic-search
+      :description "Search by meaning using embeddings")
+     ("k" "Full-text search" org-db-v3-fulltext-search
+      :description "Search by keywords (FTS5)")
+     ("h" "Headline search" org-db-v3-headline-search
+      :description "Search/browse headlines and jump to them")
+     ("p" "Search at point" org-db-v3-search-at-point
+      :description "Search using text at point/region")]
+    ["Image Search"
+     ("i" "Search images" org-db-v3-image-search
+      :description "Find images by text description")]
+    ["Files"
+     ("f" "Open file from db" org-db-v3-open-file
+      :description "Browse and open files in database")]]
+   ["Agenda"
+    ("a" "Show agenda" org-db-v3-agenda
+     :description "Show TODO items with deadlines and scheduled dates")]
+   ["Management"
+    ["Indexing"
+     ("u" "Update current file" org-db-v3-update-current-file
+      :description "Re-index the current org file")
+     ("U" "Update all open files" org-db-v3-update-all-buffers
+      :description "Re-index all open org buffers")
+     ("d" "Index directory" org-db-v3-index-directory
+      :description "Recursively index all org files in a directory")
+     ("r" "Reindex database" org-db-v3-reindex-database
+      :description "Reindex all files currently in the database")]
+    ["Server"
+     ("S" "Server status" org-db-v3-server-status
+      :description "Check if server is running")
+     ("R" "Restart server" org-db-v3-restart-server
+      :description "Stop and start the server")
+     ("L" "View server logs" org-db-v3-view-logs
+      :description "Open server log buffer")
+     ("W" "Open web interface" org-db-v3-open-web-interface
+      :description "Open server homepage in browser")]]
    ["Options"
     ("-s" "Set scope..." org-db-v3-scope-menu)
     ("q" "Quit" transient-quit-one)]])
