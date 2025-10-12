@@ -391,11 +391,14 @@ You can filter candidates dynamically using completing-read."
 
 (defun org-db-v3--char-to-line (filename char-pos)
   "Convert character position CHAR-POS in FILENAME to line number.
-Uses caching to avoid repeated file reads."
-  (with-temp-buffer
-    (insert-file-contents filename)
-    (goto-char char-pos)
-    (line-number-at-pos)))
+Returns 1 if file doesn't exist."
+  (if (file-exists-p filename)
+      (with-temp-buffer
+        (insert-file-contents filename)
+        (goto-char (min char-pos (point-max)))
+        (line-number-at-pos))
+    ;; File doesn't exist (e.g., test files), return reasonable default
+    1))
 
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here
