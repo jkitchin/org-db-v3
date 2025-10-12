@@ -68,6 +68,8 @@ class SemanticSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="Search query text")
     limit: int = Field(default=10, ge=1, le=100, description="Maximum number of results")
     model: Optional[str] = Field(default=None, description="Embedding model to use (optional)")
+    filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
+    keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
 
 class SearchResult(BaseModel):
     """Single search result."""
@@ -89,6 +91,8 @@ class FulltextSearchRequest(BaseModel):
     """Request for full-text search."""
     query: str = Field(..., min_length=1, description="Search query (FTS5 syntax)")
     limit: int = Field(default=10, ge=1, le=100, description="Maximum number of results")
+    filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
+    keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
 
 class FulltextSearchResult(BaseModel):
     """Single fulltext search result."""
@@ -108,6 +112,8 @@ class ImageSearchRequest(BaseModel):
     """Request for image search by text description."""
     query: str = Field(..., min_length=1, description="Text description of image")
     limit: int = Field(default=10, ge=1, le=100, description="Maximum number of results")
+    filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
+    keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
 
 class ImageSearchResult(BaseModel):
     """Single image search result."""
@@ -125,6 +131,8 @@ class HeadlineSearchRequest(BaseModel):
     """Request for headline search."""
     query: str = Field(default="", description="Search query (empty for all headlines)")
     limit: int = Field(default=100, ge=1, le=1000, description="Maximum number of results")
+    filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
+    keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
 
 class HeadlineSearchResult(BaseModel):
     """Single headline search result."""
