@@ -106,31 +106,21 @@ Prompts user to select from known projects, with current project as default."
       (message "Scope: %s (next search only)"
                (org-db-v3--scope-description)))))
 
-;;;###autoload (autoload 'org-db-v3-scope-menu "org-db-v3-ui" nil t)
-(transient-define-prefix org-db-v3-scope-menu ()
-  "Set search scope for next search."
-  ["Search Scope (applies to next search only)"
-   ("a" "All files" org-db-v3-scope-all
-    :description "Search all indexed files"
-    :transient transient--do-return)
-   ("d" "Directory..." org-db-v3-scope-directory
-    :description "Limit to specific directory"
-    :transient transient--do-return)
-   ("p" "Current project" org-db-v3-scope-project
-    :description "Limit to Projectile project"
-    :transient transient--do-return)
-   ("t" "Tag/Keyword..." org-db-v3-scope-tag
-    :description "Limit to files with keyword"
-    :transient transient--do-return)])
-
 ;;;###autoload (autoload 'org-db-menu "org-db-v3-ui" nil t)
 (transient-define-prefix org-db-menu ()
   [:description (lambda () (format "org-db v3 [Scope: %s]" (org-db-v3--scope-description)))
    "Search and manage your org files."]
-  ["Options"
-   ("-s" "Set scope..." org-db-v3-scope-menu
-    :transient transient--do-replace)
-   ("q" "Quit" transient-quit-one)]
+  [["Scope (applies to next search)"
+    ("-a" "All files" org-db-v3-scope-all
+     :transient t)
+    ("-d" "Directory..." org-db-v3-scope-directory
+     :transient t)
+    ("-p" "Project..." org-db-v3-scope-project
+     :transient t)
+    ("-t" "Tag/keyword..." org-db-v3-scope-tag
+     :transient t)]
+   ["Actions"
+    ("q" "Quit" transient-quit-one)]]
   ["Search"
    ["Text Search"
     ("v" "Semantic search" org-db-v3-semantic-search
