@@ -1,157 +1,620 @@
-# -*- eval: (and (fboundp 'gptel-mode) (gptel-mode 1)); -*-
-:PROPERTIES:
-:GPTEL_MODEL: claude-sonnet-4-20250514
-:GPTEL_BACKEND: Claude
-:GPTEL_SYSTEM: You are a large language model working in Emacs and a helpful assistant. Respond concisely using org-mode syntax.\n\nWhen writing Python code, use this template:\n\n#+BEGIN_SRC jupyter-python\n<python-code>\n#+END_SRC\n
-:GPTEL_BOUNDS: ((response (1095 5112)))
-:END:
-* org-db v3
+#+TITLE: org-db v3
+#+AUTHOR: John Kitchin
+#+OPTIONS: toc:2
 
-The goal in this project is to make a new org-db package that consolidates the functionality from:
+* Overview
 
-- [[./../org-db.el]]
-- [[../org-db-fulltext.el]]
-- [[../org-db-agenda.el]]
-- [[../org-db-images.el]]
-- [[../org-db-audio.el]]
+A modern org-mode database with semantic search capabilities. Built with a hybrid architecture: Emacs handles org parsing and UI, while a Python FastAPI backend provides storage, embeddings, and vector search.
 
-into a new elisp and python package. The python package will implement a FastAPI server as a front end to libsql to enable full text and semantic search, as well as searching images and audio. The elisp package will provide interactive commands to do the searching that can be accessed conveniently from a transient menu.
+* Features
 
-Review the files in those links and summarize in an organized way the features that are currently part of org-db.
+- *Semantic Search* :: Find org content by meaning using embeddings
+- *Full-Text Search* :: Fast keyword search with SQLite FTS5 and snippets
+- *Image Search* :: Find images by text description using CLIP embeddings
+- *Headline Search* :: Browse and jump to org headlines across all files
+- *Scoped Search* :: Limit searches to specific directories, projects (Projectile), or keyword/tags
+- *Agenda* :: View TODOs, deadlines, and scheduled items from all indexed files
+- *Non-blocking Indexing* :: Queue-based indexing with idle timers keeps Emacs responsive
+- *Transient UI* :: Easy-to-use menu system for all commands (=H-v= or =M-x org-db=)
+- *Web Interface* :: Browse statistics and documentation via browser
 
-Based on the provided code, here's an organized summary of org-db's current features:
+* Architecture
 
-* org-db v3 - Current Feature Summary
+#+BEGIN_EXAMPLE
+┌─────────────────┐         ┌──────────────────────┐
+│  Emacs (UI)     │◄───────►│  FastAPI Server      │
+│  - org parsing  │  HTTP   │  - SQLite storage    │
+│  - search UI    │         │  - embeddings (ML)   │
+│  - navigation   │         │  - vector search     │
+│  - transient    │         │  - CLIP (images)     │
+└─────────────────┘         └──────────────────────┘
+#+END_EXAMPLE
 
-** Core Database Architecture
+* Installation
 
-*** *Database Management*
-- SQLite-based storage with foreign key constraints
-- Automatic database setup and table creation
-- File MD5 checksums for change detection
-- Queue-based processing during Emacs idle time
-- Incremental updates when files are saved
+** Prerequisites
 
-*** *Data Models*
-- *Files*: Tracks org files with metadata and timestamps
-- *Headlines*: Org headings with TODO states, priorities, tags, properties
-- *Links*: All org-mode links with types, paths, descriptions
-- *Properties*: Key-value pairs from org headings
-- *Keywords*: File-level keywords (#+TITLE, #+AUTHOR, etc.)
-- *Tags*: Heading tags with many-to-many relationships
-- *Timestamps*: Scheduled/deadline dates and standalone timestamps
+- Emacs 28.1+
+- Python 3.10+
+- [[https://github.com/astral-sh/uv][uv]] (Python package manager)
 
-** Search and Discovery Features
+** Python Backend
 
-*** *Content Search*
-- *Headlines*: Find headings by title, TODO state, tags, priority
-- *Properties*: Search by property names and values
-- *Links*: Browse and navigate to links across all files
-- *Source Blocks*: Search code blocks by language and content
-- *Keywords*: Find files by keyword values
+#+BEGIN_SRC bash
+cd python
+uv sync
+#+END_SRC
 
-*** *Pattern-Based Search*
-- *Hashtags* (=#tag=): Custom tagging system with regex matching
-- *@-labels* (=@person=): People/entity references
-- *Email addresses*: Automatic extraction and search
-- *Targets*: Org radio targets and link destinations
+This installs all dependencies including:
+- FastAPI & Uvicorn (web server)
+- sentence-transformers (text embeddings)
+- CLIP (image embeddings)
+- SQLite (database)
 
-*** *Specialized Views*
-- *Contacts*: Headings with EMAIL properties
-- *Locations*: Headings with ADDRESS properties
-- *Bookmarks*: Headings with URL properties
-- *Recent files*: Files sorted by last modification
+** Emacs Package
 
-** Extended Functionality Modules
+Add to your Emacs config:
 
-*** *Full-Text Search* (=org-db-fulltext.el=)
-- FTS5 virtual table for content search
-- Dynamic candidate completion
-- Snippet-based results with context
-- Project-scoped search capability
+#+BEGIN_SRC emacs-lisp
+(add-to-list 'load-path "/path/to/org-db-v3/elisp")
+(require 'org-db-v3)
 
-*** *Agenda System* (=org-db-agenda.el=)
-- Alternative to org-agenda for large file collections
-- Deadline and scheduled item tracking
-- Calendar visualization with color coding
-- Bulk operations (mark done, archive, ignore)
-- Integration with standard org-agenda
+;; Bind the menu to a convenient key
+(global-set-key (kbd "H-v") 'org-db-menu)
 
-*** *Image Search* (=org-db-images.el=)
-- OCR text extraction using Tesseract
-- Image thumbnail previews in search results
-- Text search within image content
-- Support for PNG/JPG files
+;; Auto-start server when Emacs starts (optional)
+(setq org-db-v3-auto-start-server t)
+#+END_SRC
 
-*** *Audio/Video Search* (=org-db-audio.el=)
-- Speech-to-text transcription
-- Audio/video file content indexing
-- Integration with SEM (Scimax Editmarks)
-- Support for AIFF and MOV files
+Required Emacs packages:
+- =plz= (async HTTP client)
+- =transient= (menu system)
 
-** User Interface and Navigation
+Install via package manager or manually.
 
-*** *Interactive Commands*
-- =org-db-headings=: Main headline browser
-- =org-db-contacts=: Contact management
-- =org-db-locations=: Location/address search
-- =org-db-hashtags=: Tag-based navigation
-- =org-db-@=: People/entity search
-- =org-db-links=: Link browser
-- =org-db-files=: File browser
-- =org-db-agenda=: Task/deadline management
+* Quick Start
 
-*** *Integration Features*
-- Ivy/Counsel completion interface
-- Multi-action support for bulk operations
-- Transformer functions for enhanced display
-- Backlink discovery
-- org-id link resolution override
-- Hydra menu for quick access
+** 1. Start the Server
 
-** Maintenance and Utilities
+From the =python= directory:
 
-*** *Database Management*
-- File change detection and auto-updates
-- Queue processing for background updates
-- Database cleaning (remove missing files)
-- Complete database reset
-- Index entire directories recursively
-- Project-based indexing
+#+BEGIN_SRC bash
+cd python
+uv run uvicorn org_db_server.main:app --reload --port 8765 > /tmp/org-db-server.log 2>&1 &
+#+END_SRC
 
-*** *Performance Optimizations*
-- Idle-time processing to avoid blocking
-- MD5-based change detection
-- Configurable ignore patterns for files/properties
-- Separate databases for different content types
+Or from Emacs:
 
-** Configuration Options
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-start-server
+#+END_SRC
 
-*** *Customizable Settings*
-- Database location and naming
-- Update function pipeline
-- File ignore patterns
-- Tag/property exclusions
-- Keyword filtering
-- Debug logging
+** 2. Open the Menu
 
-This architecture provides a comprehensive alternative to org-agenda that scales well with thousands of org files while maintaining rich search and discovery capabilities across multiple content types.
+#+BEGIN_SRC emacs-lisp
+M-x org-db
+;; or press H-v if you bound it
+#+END_SRC
+
+** 3. Index Your Org Files
+
+Choose from the menu:
+- =d= :: Index entire directory (recursive, non-blocking)
+- =u= :: Update current file
+- =U= :: Update all open org buffers
+- =r= :: Reindex all files in database
+
+Or manually:
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-index-directory
+#+END_SRC
+
+Files are processed one at a time using idle timers to keep Emacs responsive.
+
+** 4. Search
+
+*** Semantic Search (by meaning)
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-semantic-search
+;; or press 'v' in the menu
+#+END_SRC
+
+Enter a query like "machine learning projects" and find content by semantic similarity.
+
+*** Full-Text Search (by keywords)
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-fulltext-search
+;; or press 'k' in the menu
+#+END_SRC
+
+*** Search at Point
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-search-at-point
+;; or press 'p' in the menu
+#+END_SRC
+
+Uses selected region or sentence at point as the search query.
+
+*** Image Search
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-image-search
+;; or press 'i' in the menu
+#+END_SRC
+
+Find images by text description using CLIP embeddings.
+
+*** Headline Search
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-headline-search
+;; or press 'h' in the menu
+#+END_SRC
+
+Browse all headlines with completing-read interface.
+
+*** Using Search Scope
+
+All searches (semantic, fulltext, headline, image) can be limited to specific subsets of your indexed files. The scope setting applies to the *next search only* and then resets to "All files".
+
+From the main menu (=H-v=), press =-s= to open the scope submenu:
+
+- =a= :: Search all files (default)
+- =d= :: Limit to a specific directory
+- =p= :: Limit to a Projectile project (prompts to select from known projects)
+- =t= :: Limit to files with a specific keyword/tag
+
+Example workflow:
+1. Press =H-v= to open menu
+2. Press =-s= then =p= to select a project scope
+3. Choose "my-notes" from the project list
+4. Press =v= for semantic search
+5. Enter your query - results will only come from "my-notes" project
+6. Next search will automatically reset to "All files"
+
+The current scope is shown in the menu header: =org-db v3 [Scope: Project: my-notes]=
+
+** 5. Agenda
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-agenda
+;; or press 'a' in the menu
+#+END_SRC
+
+View all TODO items with deadlines and scheduled dates from indexed files.
+
+* Usage
+
+** Transient Menu
+
+Press =H-v= or =M-x org-db= to open the menu:
+
+*** Options
+- =-s= :: Set search scope (directory, project, tag, or all files)
+- =q= :: Quit menu
+
+*** Search Commands
+- =v= :: Semantic search (search by meaning)
+- =k= :: Full-text search (keyword search with FTS5)
+- =h= :: Headline search (browse headlines)
+- =i= :: Image search (find images by description)
+- =p= :: Search at point (use text at cursor)
+
+*** File Management
+- =f= :: Open file from database (browse indexed files)
+
+*** Indexing
+- =u= :: Update current file
+- =U= :: Update all open org buffers
+- =d= :: Index directory (recursive, non-blocking)
+- =r= :: Reindex database (all files)
+
+*** Agenda
+- =a= :: Show agenda (TODOs, deadlines, scheduled)
+
+*** Server Management
+- =S= :: Server status
+- =R= :: Restart server
+- =L= :: View server logs
+- =W= :: Open web interface
+
+*** Other
+- =q= :: Quit menu
+
+** Search Results Navigation
+
+In the =*org-db search*= buffer:
+
+- =RET= :: Jump to result location
+- =n= :: Next result
+- =p= :: Previous result
+- =s= :: New search
+- =q= :: Quit window
+
+** Configuration
+
+#+BEGIN_SRC emacs-lisp
+;; Server connection
+(setq org-db-v3-server-host "127.0.0.1")
+(setq org-db-v3-server-port 8765)
+
+;; Auto-start server
+(setq org-db-v3-auto-start-server t)
+
+;; Search defaults
+(setq org-db-v3-search-default-limit 10)
+#+END_SRC
+
+** Web Interface
+
+Open the web interface to view statistics and API documentation:
+
+#+BEGIN_SRC emacs-lisp
+M-x org-db-v3-open-web-interface
+;; or press 'W' in the menu
+;; or visit http://127.0.0.1:8765 in your browser
+#+END_SRC
+
+The homepage shows:
+- Database location and size
+- File counts, headlines, embeddings
+- Recent files indexed
+- Complete API documentation
+- Getting started guide
+
+* API Endpoints
+
+The FastAPI server provides REST endpoints. Visit http://127.0.0.1:8765/docs for interactive documentation.
+
+** Core Endpoints
+
+*** Health Check
+#+BEGIN_SRC
+GET /health
+#+END_SRC
+
+*** Index File
+#+BEGIN_SRC
+POST /api/file
+Content-Type: application/json
+
+{
+  "filename": "/path/to/file.org",
+  "md5": "abc123...",
+  "file_size": 1024,
+  "content": "full file content...",
+  "headlines": [...],
+  "links": [...],
+  "keywords": [...],
+  "src_blocks": [...],
+  "images": [...]
+}
+#+END_SRC
+
+*** Semantic Search
+#+BEGIN_SRC
+POST /api/search/semantic
+Content-Type: application/json
+
+{
+  "query": "your search query",
+  "limit": 10,
+  "model": "all-MiniLM-L6-v2"  // optional
+}
+#+END_SRC
+
+Response includes similarity scores, filenames, line numbers, and context.
+
+*** Full-Text Search
+#+BEGIN_SRC
+POST /api/search/fulltext
+Content-Type: application/json
+
+{
+  "query": "keyword search",
+  "limit": 10
+}
+#+END_SRC
+
+Returns snippets and character positions for jumping to results.
+
+*** Image Search
+#+BEGIN_SRC
+POST /api/search/images
+Content-Type: application/json
+
+{
+  "query": "a photo of a cat",
+  "limit": 10
+}
+#+END_SRC
+
+*** Headline Search
+#+BEGIN_SRC
+POST /api/search/headlines
+Content-Type: application/json
+
+{
+  "query": "project",
+  "limit": 10
+}
+#+END_SRC
+
+*** Agenda
+#+BEGIN_SRC
+POST /api/agenda
+Content-Type: application/json
+
+{
+  "days_ahead": 7
+}
+#+END_SRC
+
+Returns TODO items with deadlines and scheduled dates.
+
+*** File Management
+#+BEGIN_SRC
+GET /api/files           # List all indexed files
+DELETE /api/file?filename=/path/to/file.org  # Remove file from database
+#+END_SRC
+
+*** Statistics
+#+BEGIN_SRC
+GET /api/stats/          # Database statistics
+GET /api/stats/files     # List of files with timestamps
+#+END_SRC
+
+* Database Schema
+
+Database location: =~/org-db/org-db-v3.db=
+
+SQLite database with 22 tables including:
+
+- =files= :: Indexed org files with MD5 hashes
+- =headlines= :: Org headings with metadata (TODO, tags, priority, scheduled, deadline)
+- =chunks= :: Text chunks for semantic search with line numbers
+- =embeddings= :: Vector embeddings stored as BLOB (float32)
+- =fts_content= :: Full-text search index (SQLite FTS5)
+- =links= :: All links with type, path, and description
+- =properties= :: Org properties (key-value pairs)
+- =keywords= :: File-level keywords
+- =tags= :: Tags with relationships to headlines
+- =src_blocks= :: Source code blocks with language and contents
+- =images= :: Image paths with positions
+- =image_embeddings= :: CLIP embeddings for images
+
+* Development
+
+** Running Tests
+
+Python tests:
+
+#+BEGIN_SRC bash
+cd python
+uv run pytest tests/ -v
+#+END_SRC
+
+Emacs tests:
+
+#+BEGIN_SRC bash
+emacs -batch -l tests/org-db-v3-search-test.el -f ert-run-tests-batch-and-exit
+#+END_SRC
+
+** Reloading Code During Development
+
+After making changes to elisp files:
+
+#+BEGIN_SRC emacs-lisp
+M-x load-file RET reload.el RET
+M-x org-db-v3-reload
+#+END_SRC
+
+Or restart Emacs to load fresh code.
+
+** Project Structure
+
+#+BEGIN_EXAMPLE
+org-db-v3/
+├── python/
+│   ├── org_db_server/
+│   │   ├── api/              # FastAPI routes
+│   │   │   ├── indexing.py   # File indexing endpoints
+│   │   │   ├── search.py     # Search endpoints
+│   │   │   ├── stats.py      # Statistics endpoints
+│   │   │   └── agenda.py     # Agenda endpoint
+│   │   ├── models/           # Pydantic schemas & DB models
+│   │   ├── services/         # Business logic
+│   │   │   ├── database.py   # SQLite operations
+│   │   │   ├── embeddings.py # Text embeddings
+│   │   │   ├── clip_service.py # Image embeddings
+│   │   │   └── chunking.py   # Text chunking
+│   │   └── templates/        # HTML templates
+│   └── tests/                # Python tests
+├── elisp/
+│   ├── org-db-v3.el          # Main package
+│   ├── org-db-v3-parse.el    # Org parsing
+│   ├── org-db-v3-client.el   # HTTP client & indexing queue
+│   ├── org-db-v3-server.el   # Server management
+│   ├── org-db-v3-search.el   # Search UI
+│   ├── org-db-v3-agenda.el   # Agenda functionality
+│   └── org-db-v3-ui.el       # Transient menu
+├── tests/                    # Emacs tests
+└── reload.el                 # Development helper
+#+END_EXAMPLE
+
+* How It Works
+
+** Indexing Pipeline
+
+1. *Emacs parses* org file using =org-element-parse-buffer=
+2. *Extracts* headlines, links, keywords, src blocks, images, and full content
+3. *Adds to queue* for non-blocking processing
+4. *Idle timer* processes one file at a time
+5. *Sends JSON* to FastAPI server via async HTTP
+6. *Server stores* structured data in SQLite
+7. *Generates embeddings*:
+   - Text chunks using sentence-transformers
+   - Images using CLIP
+8. *Stores vectors* as float32 bytes in database
+9. *Populates FTS5* table for full-text search
+
+** Non-blocking Indexing
+
+Directory indexing uses a queue-based approach:
+- Files are collected upfront
+- Idle timer processes one file per tick (0.05s)
+- Local/directory variables are suppressed for safety
+- Already-open buffers are preserved
+- Progress shown in echo area
+- Cancellable with =M-x org-db-v3-cancel-indexing=
+
+** Search Pipeline
+
+*** Semantic Search
+1. User enters query in minibuffer
+2. Server generates query embedding
+3. Calculates cosine similarity with all stored embeddings
+4. Returns top N results ranked by similarity
+5. Emacs displays in org-mode buffer with navigation
+
+*** Full-Text Search
+1. Query sent to FTS5 index
+2. SQLite returns matching content with snippets
+3. Character positions enable precise jumping
+4. Results displayed with context
+
+*** Image Search
+1. Query text converted to CLIP embedding
+2. Similarity calculated with stored image embeddings
+3. Matching images returned with thumbnails
+4. Click to view full image
+
+** Embedding Models
+
+*** Text (Semantic Search)
+- Model: =all-MiniLM-L6-v2= (384 dimensions)
+- Fast inference (~50 sentences/second on CPU)
+- Good accuracy for semantic search
+- Runs locally (no API calls)
+- Downloaded automatically on first use (~90MB)
+
+*** Images (CLIP)
+- Model: =clip-ViT-B-32=
+- Text-to-image and image-to-image similarity
+- Downloaded automatically on first use (~600MB)
+
+* Performance
+
+- *Indexing*: ~100 headlines/second
+- *Search*: <100ms for 1000 documents (local)
+- *Embedding generation*: ~50 sentences/second (CPU)
+- *Database*: SQLite handles 100k+ chunks efficiently
+- *Non-blocking*: Emacs remains responsive during indexing
+
+* Troubleshooting
+
+** Server won't start
+
+Check if port 8765 is already in use:
+
+#+BEGIN_SRC bash
+lsof -i :8765
+#+END_SRC
+
+Change port in both Python and Emacs config if needed.
+
+** 404 errors when indexing
+
+Old code is cached in Emacs. Reload the elisp files:
+
+#+BEGIN_SRC emacs-lisp
+M-x load-file RET reload.el RET
+M-x org-db-v3-reload
+#+END_SRC
+
+Or restart Emacs.
+
+** No search results
+
+1. Verify files are indexed: Check server logs at =/tmp/org-db-server.log=
+2. Ensure embeddings generated: Look for =embedding_service= in logs
+3. Check database size: Visit web interface (=W= in menu)
+4. Try reindexing: Press =r= in menu
+
+** Indexing hangs or blocks Emacs
+
+The queue-based system should prevent this, but if it happens:
+
+1. Cancel current operation: =M-x org-db-v3-cancel-indexing=
+2. Check queue status: =M-x describe-variable RET org-db-v3-index-queue=
+3. Reload code (see above)
+4. Restart Emacs if needed
+
+** Local variable prompts during indexing
+
+The code suppresses local and directory variables, but if you still see prompts:
+
+1. Check that you've reloaded the latest code
+2. Set =(setq enable-local-variables nil)= temporarily
+3. Report as a bug
+
+** Import errors
+
+Ensure uv environment is set up:
+
+#+BEGIN_SRC bash
+cd python
+uv sync
+uv run python -c "import org_db_server"
+#+END_SRC
+
+* Completed Features
+
+- [X] Semantic search with embeddings
+- [X] Full-text search (FTS5) with snippets
+- [X] Image search with CLIP
+- [X] Headline search
+- [X] Agenda (TODOs, deadlines, scheduled)
+- [X] Transient menu UI
+- [X] Web interface with statistics
+- [X] Non-blocking directory indexing
+- [X] File browser (open files from database)
+- [X] Search at point
+- [X] Auto-indexing on save
+
+* Future Enhancements
+
+- [ ] Reranking strategy
+- [ ] hybrid search
+- [ ] Custom chunk sizes/strategies
+- [ ] More search filters (date ranges, file patterns)
 
 
-* New features
+* License
 
-** replace sqlite with libsql
+See LICENSE file.
 
-Use similar table structures, but update them for new functionality
+* Contributing
 
-** semantic vector search
+Contributions welcome! Please:
 
-Add a table that stores chunks, line positions and embeddings for each document for vector search
+1. Write tests for new features
+2. Follow existing code style
+3. Update documentation
+4. Use descriptive commit messages
 
-** async on the Emacs side
+* Credits
 
-I don't want Emacs to be blocked while indexing since that will be done on the Python server side
+Built with:
+- [[https://fastapi.tiangolo.com/][FastAPI]] (Python web framework)
+- [[https://www.sbert.net/][sentence-transformers]] (text embeddings)
+- [[https://github.com/openai/CLIP][CLIP]] (image embeddings)
+- [[https://github.com/alphapapa/plz.el][plz.el]] (async HTTP for Emacs)
+- [[https://github.com/astral-sh/uv][uv]] (Python package manager)
+- [[https://magit.vc/manual/transient/][transient]] (Emacs menu system)
 
-** CLIP image search
-
-store clip embeddings to search images by description
+Inspired by org-roam, org-ql, and semantic search research.
