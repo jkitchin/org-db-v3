@@ -126,24 +126,63 @@ async def fulltext_search(request: FulltextSearchRequest):
     try:
         cursor = db.conn.cursor()
 
+        # Build query with optional filters
         # Query FTS5 table with snippet() for highlighted context and bm25() for relevance
         # snippet() parameters: column, start_tag, end_tag, ellipsis, token_count
         # We use '>>>' and '<<<' as markers that can be removed/highlighted in Elisp
-        cursor.execute(
-            """SELECT
-                filename,
-                title,
-                content,
-                tags,
+        base_query = """
+            SELECT
+                fts.filename,
+                fts.title,
+                fts.content,
+                fts.tags,
                 snippet(fts_content, 2, '>>>', '<<<', '...', 15) as snippet,
                 bm25(fts_content) as rank
-            FROM fts_content
-            WHERE fts_content MATCH ?
-            ORDER BY rank
-            LIMIT ?""",
-            (request.query, request.limit)
-        )
+            FROM fts_content fts
+        """
 
+        params = [request.query]
+        where_clauses = ["fts_content MATCH ?"]
+
+        # Add filename pattern filter if provided
+        if request.filename_pattern:
+            # Need to join with files table for filename pattern
+            base_query = """
+                SELECT
+                    fts.filename,
+                    fts.title,
+                    fts.content,
+                    fts.tags,
+                    snippet(fts_content, 2, '>>>', '<<<', '...', 15) as snippet,
+                    bm25(fts_content) as rank
+                FROM fts_content fts
+                JOIN files f ON fts.filename = f.filename
+            """
+            where_clauses.append("f.filename LIKE ?")
+            params.append(request.filename_pattern)
+
+        # Add keyword filter if provided
+        if request.keyword:
+            if "JOIN files f" not in base_query:
+                base_query = base_query.replace(
+                    "FROM fts_content fts",
+                    "FROM fts_content fts JOIN files f ON fts.filename = f.filename"
+                )
+            base_query = base_query.replace(
+                "JOIN files f ON fts.filename = f.filename",
+                """JOIN files f ON fts.filename = f.filename
+                JOIN file_keywords fk ON f.rowid = fk.filename_id
+                JOIN keywords k ON fk.keyword_id = k.rowid"""
+            )
+            where_clauses.append("k.keyword = ?")
+            params.append(request.keyword)
+
+        # Combine WHERE clauses
+        base_query += " WHERE " + " AND ".join(where_clauses)
+        base_query += " ORDER BY rank LIMIT ?"
+        params.append(request.limit)
+
+        cursor.execute(base_query, params)
         rows = cursor.fetchall()
 
         # Convert to result objects
