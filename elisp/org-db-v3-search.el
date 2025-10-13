@@ -48,6 +48,19 @@
   :type 'integer
   :group 'org-db-v3)
 
+(defcustom org-db-v3-search-use-reranking nil
+  "Enable cross-encoder reranking for more accurate semantic search.
+When enabled, retrieves more candidates and reranks them using a
+cross-encoder model for better relevance. Slower but more accurate."
+  :type 'boolean
+  :group 'org-db-v3)
+
+(defcustom org-db-v3-search-rerank-candidates 50
+  "Number of candidates to retrieve before reranking.
+Only used when `org-db-v3-search-use-reranking' is non-nil."
+  :type 'integer
+  :group 'org-db-v3)
+
 ;;;###autoload
 (defun org-db-v3-semantic-search (query &optional limit)
   "Perform semantic search for QUERY.
@@ -62,7 +75,9 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
          (scope-params (when (fboundp 'org-db-v3--scope-to-params)
                          (org-db-v3--scope-to-params)))
          (request-body (append `((query . ,query)
-                                (limit . ,limit))
+                                (limit . ,limit)
+                                (rerank . ,(if org-db-v3-search-use-reranking t :json-false))
+                                (rerank_candidates . ,org-db-v3-search-rerank-candidates))
                               (when scope-params
                                 (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
                                       (cons 'keyword (plist-get scope-params :keyword)))))))
@@ -84,7 +99,8 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
 (defun org-db-v3-display-search-results (query response)
   "Display search RESPONSE for QUERY using completing-read."
   (let* ((results (alist-get 'results response))
-         (model-used (alist-get 'model_used response)))
+         (model-used (alist-get 'model_used response))
+         (reranked (alist-get 'reranked response)))
 
     (if (zerop (length results))
         (message "No results found for: %s" query)
@@ -130,8 +146,10 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
 
         ;; Let user select
         (let ((selection (completing-read
-                         (format "Search results (%s, %d found): "
-                                model-used (length results))
+                         (format "Search results (%s%s, %d found): "
+                                model-used
+                                (if reranked " + reranked" "")
+                                (length results))
                          candidates
                          nil t)))
           (when selection

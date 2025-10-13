@@ -435,6 +435,17 @@
 (setq org-db-v3-auto-start-server t)</code></pre>
                 </div>
             </div>
+
+            <!-- Server Logs Section -->
+            <div class="section">
+                <h2>📋 Recent Server Logs</h2>
+                <div id="logs-container" style="background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; max-height: 300px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 0.85em;">
+                    <div style="text-align: center; color: #6c757d; padding: 20px;">
+                        Loading logs...
+                    </div>
+                </div>
+                <p style="margin-top: 10px; color: #6c757d; font-size: 0.9em;">Showing last 10 log entries • Auto-refreshes every 10 seconds</p>
+            </div>
         </div>
 
         <footer>
@@ -521,8 +532,56 @@
         // Load stats on page load
         loadStats();
 
+        // Load server logs
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs?lines=10');
+                const data = await response.json();
+
+                const logsContainer = document.getElementById('logs-container');
+
+                if (data.logs && data.logs.length > 0) {
+                    // Build log HTML
+                    let html = '';
+                    data.logs.forEach(log => {
+                        // Color code by level
+                        let levelColor = '#6c757d';
+                        if (log.level === 'ERROR') levelColor = '#dc3545';
+                        else if (log.level === 'WARNING') levelColor = '#ffc107';
+                        else if (log.level === 'INFO') levelColor = '#0d6efd';
+
+                        html += `<div style="margin-bottom: 8px; padding: 6px; border-left: 3px solid ${levelColor}; background: white;">`;
+                        html += `<span style="color: #6c757d; font-size: 0.8em;">${log.timestamp || 'N/A'}</span> `;
+                        html += `<span style="color: ${levelColor}; font-weight: bold;">[${log.level}]</span> `;
+                        html += `<span style="color: #495057;">${escapeHtml(log.message)}</span>`;
+                        html += `</div>`;
+                    });
+                    logsContainer.innerHTML = html;
+                } else {
+                    logsContainer.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 20px;">No logs available yet</div>';
+                }
+            } catch (error) {
+                console.error('Error loading logs:', error);
+                document.getElementById('logs-container').innerHTML =
+                    '<div style="text-align: center; color: #dc3545; padding: 20px;">Failed to load logs</div>';
+            }
+        }
+
+        // Helper function to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Initial load
+        loadLogs();
+
         // Refresh stats every 10 seconds
         setInterval(loadStats, 10000);
+
+        // Refresh logs every 10 seconds
+        setInterval(loadLogs, 10000);
 
         // Stop server function
         async function stopServer() {

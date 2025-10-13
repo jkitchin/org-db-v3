@@ -1,12 +1,22 @@
 """FastAPI server for org-db v3."""
 import os
 import signal
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 
 from org_db_server.api import indexing, search, stats, agenda
+from org_db_server.log_handler import get_memory_handler
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize memory log handler
+memory_handler = get_memory_handler()
+logger.info("org-db v3 server starting...")
 
 app = FastAPI(title="org-db Server", version="0.1.0")
 
@@ -36,6 +46,12 @@ async def shutdown():
     # Send SIGTERM to the parent process group
     os.kill(os.getpid(), signal.SIGTERM)
     return {"status": "shutting down"}
+
+@app.get("/api/logs")
+async def get_logs(lines: int = 10):
+    """Get the last N lines of the server log."""
+    logs = memory_handler.get_recent_logs(lines)
+    return {"logs": logs, "count": len(logs)}
 
 @app.get("/", response_class=HTMLResponse)
 async def root():

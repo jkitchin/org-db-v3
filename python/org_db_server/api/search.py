@@ -1,7 +1,10 @@
 """Search API endpoints."""
 from fastapi import APIRouter, HTTPException
 import numpy as np
+import logging
 from typing import List, Tuple
+
+logger = logging.getLogger(__name__)
 
 from org_db_server.models.schemas import (
     SemanticSearchRequest, SemanticSearchResponse, SearchResult,
@@ -12,6 +15,7 @@ from org_db_server.models.schemas import (
 from org_db_server.services.database import Database
 from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.services.clip_service import get_clip_service
+from org_db_server.services.reranker import get_reranker_service
 from org_db_server.config import settings
 
 router = APIRouter(prefix="/api/search", tags=["search"])
@@ -101,9 +105,12 @@ async def semantic_search(request: SemanticSearchRequest):
 
             results_with_scores.append((similarity, result_data))
 
-        # Sort by similarity (highest first) and take top N
+        # Sort by similarity (highest first)
         results_with_scores.sort(key=lambda x: x[0], reverse=True)
-        top_results = results_with_scores[:request.limit]
+
+        # Determine how many candidates to retrieve
+        num_candidates = request.rerank_candidates if request.rerank else request.limit
+        top_results = results_with_scores[:num_candidates]
 
         # Convert to SearchResult objects
         search_results = [
@@ -111,10 +118,32 @@ async def semantic_search(request: SemanticSearchRequest):
             for _, result_data in top_results
         ]
 
+        # Apply cross-encoder reranking if requested
+        reranked = False
+        if request.rerank and len(search_results) > 0:
+            try:
+                reranker = get_reranker_service()
+                # Convert to dict format for reranking
+                result_dicts = [r.model_dump() for r in search_results]
+                reranked_dicts = reranker.rerank(
+                    query=request.query,
+                    results=result_dicts,
+                    text_field="chunk_text",
+                    score_field="similarity_score",
+                    top_k=request.limit
+                )
+                search_results = [SearchResult(**d) for d in reranked_dicts]
+                reranked = True
+            except Exception as e:
+                # Fall back to non-reranked results if reranking fails
+                logger.warning(f"Reranking failed, using original results: {e}")
+                search_results = search_results[:request.limit]
+
         return SemanticSearchResponse(
             results=search_results,
             query=request.query,
-            model_used=model_name
+            model_used=model_name,
+            reranked=reranked
         )
 
     except Exception as e:

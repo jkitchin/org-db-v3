@@ -70,6 +70,8 @@ class SemanticSearchRequest(BaseModel):
     model: Optional[str] = Field(default=None, description="Embedding model to use (optional)")
     filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
     keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
+    rerank: bool = Field(default=False, description="Enable cross-encoder reranking for better accuracy")
+    rerank_candidates: int = Field(default=50, ge=10, le=200, description="Number of candidates to retrieve before reranking")
 
 class SearchResult(BaseModel):
     """Single search result."""
@@ -80,12 +82,14 @@ class SearchResult(BaseModel):
     chunk_type: str
     begin_line: int
     end_line: int
+    reranked: bool = False
 
 class SemanticSearchResponse(BaseModel):
     """Response from semantic search."""
     results: List[SearchResult]
     query: str
     model_used: str
+    reranked: bool = False  # True if results were reranked
 
 class FulltextSearchRequest(BaseModel):
     """Request for full-text search."""
