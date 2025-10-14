@@ -95,9 +95,8 @@ Waits for each request to complete before processing the next file."
 
   ;; If queue is empty, clean up
   (when (null org-db-v3-index-queue)
-    (when org-db-v3-index-timer
-      (cancel-timer org-db-v3-index-timer)
-      (setq org-db-v3-index-timer nil))
+    ;; Clear the indexing marker
+    (setq org-db-v3-index-timer nil)
     (message "Indexing complete: %d file%s processed"
              org-db-v3-index-total
              (if (= org-db-v3-index-total 1) "" "s"))))
@@ -182,9 +181,10 @@ Files are processed one at a time using timers to keep Emacs responsive."
                                  count
                                  (if (= count 1) "" "s")
                                  directory))
-        ;; Cancel existing timer if running
+        ;; Check if indexing is already in progress
         (when org-db-v3-index-timer
-          (cancel-timer org-db-v3-index-timer))
+          (message "Indexing already in progress, please wait or cancel first")
+          (user-error "Indexing already in progress"))
 
         ;; Set up the queue
         (setq org-db-v3-index-queue org-files
@@ -246,9 +246,10 @@ Uses non-blocking queue processing to keep Emacs responsive."
 
                     ;; Reindex existing files using non-blocking queue
                     (when existing-files
-                      ;; Cancel existing timer if running
+                      ;; Check if indexing is already in progress
                       (when org-db-v3-index-timer
-                        (cancel-timer org-db-v3-index-timer))
+                        (message "Indexing already in progress, please wait or cancel first")
+                        (user-error "Indexing already in progress"))
 
                       ;; Set up the queue
                       (setq org-db-v3-index-queue existing-files
@@ -278,16 +279,15 @@ Uses non-blocking queue processing to keep Emacs responsive."
 (defun org-db-v3-cancel-indexing ()
   "Cancel the current indexing operation."
   (interactive)
-  (when org-db-v3-index-timer
-    (cancel-timer org-db-v3-index-timer)
-    (setq org-db-v3-index-timer nil)
-    (message "Indexing cancelled: %d of %d files processed"
-             org-db-v3-index-processed
-             org-db-v3-index-total)
-    (setq org-db-v3-index-queue nil
-          org-db-v3-index-total 0
-          org-db-v3-index-processed 0))
-  (unless org-db-v3-index-timer
+  (if org-db-v3-index-timer
+      (progn
+        (setq org-db-v3-index-timer nil)
+        (message "Indexing cancelled: %d of %d files processed"
+                 org-db-v3-index-processed
+                 org-db-v3-index-total)
+        (setq org-db-v3-index-queue nil
+              org-db-v3-index-total 0
+              org-db-v3-index-processed 0))
     (message "No indexing operation in progress")))
 
 (provide 'org-db-v3-client)
