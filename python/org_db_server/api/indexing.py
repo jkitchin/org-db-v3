@@ -2,6 +2,8 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 from typing import List, Dict, Any
+import psutil
+import os
 
 from org_db_server.models.schemas import IndexFileRequest, IndexFileResponse
 from org_db_server.services.database import Database
@@ -11,10 +13,26 @@ from org_db_server.services.clip_service import get_clip_service
 from org_db_server.services.docling_service import get_docling_service
 from org_db_server.config import settings
 from pathlib import Path
-import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+def log_memory_usage(context: str = ""):
+    """Log current memory usage for debugging."""
+    try:
+        process = psutil.Process()
+        mem_info = process.memory_info()
+        mem_mb = mem_info.rss / 1024 / 1024
+        msg = f"[MEMORY{(' ' + context) if context else ''}] RSS: {mem_mb:.1f} MB, VMS: {mem_info.vms / 1024 / 1024:.1f} MB"
+        logger.info(msg)
+
+        # Also write to dedicated memory log file for debugging
+        with open("/tmp/org-db-memory.log", "a") as f:
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            f.write(f"{timestamp} - PID {os.getpid()} - {msg}\n")
+    except Exception as e:
+        logger.warning(f"Could not get memory info: {e}")
 
 router = APIRouter(prefix="/api", tags=["indexing"])
 
@@ -72,6 +90,8 @@ async def delete_file(filename: str) -> Dict[str, Any]:
 async def index_file(request: IndexFileRequest):
     """Index an org file."""
     try:
+        log_memory_usage("at start of indexing")
+
         # Debug: Log what we received
         logger.info(f"Indexing file: {request.filename}")
         logger.info(f"  Headlines: {len(request.headlines)}")
@@ -160,17 +180,22 @@ async def index_file(request: IndexFileRequest):
 
         # Generate chunks from full file content for semantic search
         if request.content:
+            log_memory_usage("before chunking org content")
+
             # Chunk the full content with proper line tracking
             all_chunks = chunk_text(request.content, method="paragraph")
 
             # Generate embeddings
             if all_chunks:
+                log_memory_usage(f"before embeddings for {len(all_chunks)} org chunks")
                 embedding_service = get_embedding_service()
                 chunk_texts = [c["text"] for c in all_chunks]
                 embeddings = embedding_service.generate_embeddings(chunk_texts)
 
+                log_memory_usage(f"after embeddings, before storing {len(all_chunks)} org chunks")
                 # Store chunks and embeddings
                 db.store_chunks(file_id, all_chunks, embeddings, embedding_service.model_name)
+                log_memory_usage("after storing org chunks")
 
         # Populate FTS5 table with entire file content
         db.populate_fts(file_id, request.filename, request.content or "")
@@ -219,19 +244,27 @@ async def index_file(request: IndexFileRequest):
 
         # Process linked files (PDF, DOCX, etc.)
         linked_files_indexed = 0
-        if request.linked_files:
+
+        if request.linked_files and not settings.enable_linked_files:
+            logger.info(f"Skipping {len(request.linked_files)} linked files (feature disabled)")
+
+        if request.linked_files and settings.enable_linked_files:
+            log_memory_usage(f"before processing {len(request.linked_files)} linked files")
             logger.info(f"Processing {len(request.linked_files)} linked files for {request.filename}")
             docling = get_docling_service()
 
-            for linked_file in request.linked_files:
+            for idx, linked_file in enumerate(request.linked_files, 1):
                 try:
                     file_path = linked_file.file_path
                     org_link_line = linked_file.org_link_line
 
+                    log_memory_usage(f"before converting linked file {idx}/{len(request.linked_files)}: {Path(file_path).name}")
                     logger.info(f"Converting linked file: {file_path}")
 
                     # Convert file to markdown
+                    # PDFs use lightweight pymupdf4llm, others use docling in subprocess
                     conversion = docling.convert_to_markdown(file_path)
+                    log_memory_usage(f"after converting {Path(file_path).name}")
 
                     # Determine file type
                     file_type = Path(file_path).suffix.lstrip('.')
@@ -252,14 +285,17 @@ async def index_file(request: IndexFileRequest):
                     if conversion['status'] == 'success':
                         markdown = conversion['markdown']
 
+                        log_memory_usage(f"before chunking {Path(file_path).name}")
                         # Chunk the markdown
                         chunk_results = chunk_text(markdown, method="paragraph")
 
                         if chunk_results:
+                            log_memory_usage(f"before embeddings for {len(chunk_results)} linked file chunks from {Path(file_path).name}")
                             # Generate embeddings
                             texts = [c['text'] for c in chunk_results]
                             embeddings = embedding_service.generate_embeddings(texts)
 
+                            log_memory_usage(f"after embeddings, before storing linked file chunks from {Path(file_path).name}")
                             # Store chunks
                             db.store_linked_file_chunks(
                                 org_file_id=file_id,
@@ -271,6 +307,7 @@ async def index_file(request: IndexFileRequest):
                             )
 
                             linked_files_indexed += 1
+                            log_memory_usage(f"after indexing linked file {idx}/{len(request.linked_files)}: {Path(file_path).name}")
                             logger.info(f"Indexed linked file: {file_path} ({len(chunk_results)} chunks)")
                         else:
                             logger.warning(f"No chunks generated for {file_path}")
@@ -279,9 +316,21 @@ async def index_file(request: IndexFileRequest):
 
                 except Exception as e:
                     logger.error(f"Error processing linked file {linked_file.file_path}: {e}", exc_info=True)
+                    log_memory_usage(f"after error processing {Path(linked_file.file_path).name}")
                     # Continue with other files
 
+            # Force garbage collection after processing all linked files
+            import gc
+            gc.collect()
+            log_memory_usage("after gc.collect() for linked files")
+
+        log_memory_usage("before final commit")
         db.conn.commit()
+        log_memory_usage("after commit, indexing complete")
+
+        # Final garbage collection to free memory for next request
+        import gc
+        gc.collect()
 
         return IndexFileResponse(
             file_id=file_id,

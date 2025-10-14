@@ -16,6 +16,9 @@ dependencies = [
     "python-multipart>=0.0.6",
     "sse-starlette>=1.8.2",
     "docling>=2.0.0",
+    "pymupdf4llm>=0.0.5",
+    "python-docx>=1.0.0",
+    "python-pptx>=0.6.0",
 ]
 
 [project.optional-dependencies]

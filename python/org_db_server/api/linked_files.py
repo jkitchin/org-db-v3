@@ -181,6 +181,55 @@ async def get_linked_files_for_org_file(org_filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/all", response_model=dict)
+async def list_all_linked_files():
+    """List all linked files in the database."""
+    try:
+        cursor = db.conn.cursor()
+        cursor.execute("""
+            SELECT
+                lf.rowid,
+                lf.file_path,
+                lf.file_type,
+                lf.file_size,
+                lf.conversion_status,
+                lf.indexed_at,
+                f.filename as org_filename,
+                lf.org_link_line,
+                COUNT(c.rowid) as chunk_count
+            FROM linked_files lf
+            JOIN files f ON lf.org_file_id = f.rowid
+            LEFT JOIN chunks c ON c.linked_file_id = lf.rowid
+            GROUP BY lf.rowid
+            ORDER BY lf.indexed_at DESC
+        """)
+
+        rows = cursor.fetchall()
+
+        linked_files = []
+        for row in rows:
+            linked_files.append({
+                "id": row[0],
+                "file_path": row[1],
+                "file_type": row[2],
+                "file_size": row[3],
+                "conversion_status": row[4],
+                "indexed_at": row[5],
+                "org_filename": row[6],
+                "org_link_line": row[7],
+                "chunk_count": row[8]
+            })
+
+        return {
+            "linked_files": linked_files,
+            "count": len(linked_files)
+        }
+
+    except Exception as e:
+        logger.error(f"Error listing linked files: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{linked_file_id}", response_model=dict)
 async def get_linked_file_info(linked_file_id: int):
     """Get information about a specific linked file."""

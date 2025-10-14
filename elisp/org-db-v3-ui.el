@@ -138,7 +138,9 @@ Returns plist with :filename_pattern and/or :keyword."
      :description "Find images by text description")]
    ["Files"
     ("f" "Open file from db" org-db-v3-open-file
-     :description "Browse and open files in database")]]
+     :description "Browse and open org files in database")
+    ("F" "Open linked file" org-db-v3-open-linked-file
+     :description "Browse indexed linked files (PDF, DOCX, etc.)")]]
   ["Agenda"
    ("a" "Show agenda" org-db-v3-agenda
     :description "Show TODO items with deadlines and scheduled dates")]

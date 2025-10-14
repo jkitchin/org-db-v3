@@ -498,6 +498,20 @@ Returns 1 if file doesn't exist."
     :else (lambda (error)
             (message "Error fetching files: %s" (plz-error-message error)))))
 
+;;;###autoload
+(defun org-db-v3-open-linked-file ()
+  "Browse all linked files (PDF, DOCX, etc.) in database and open selected file or org link."
+  (interactive)
+
+  (org-db-v3-ensure-server)
+
+  (plz 'get (concat (org-db-v3-server-url) "/api/linked-files/all")
+    :as #'json-read
+    :then (lambda (response)
+            (org-db-v3-display-linked-file-list response))
+    :else (lambda (error)
+            (message "Error fetching linked files: %s" (plz-error-message error)))))
+
 (defun org-db-v3-display-file-list (response)
   "Display file list from RESPONSE using completing-read."
   (let* ((files (alist-get 'files response))
@@ -540,6 +554,73 @@ Returns 1 if file doesn't exist."
               (if (and file (file-exists-p file))
                   (find-file file)
                 (message "File does not exist: %s" file)))))))))
+
+(defun org-db-v3-display-linked-file-list (response)
+  "Display linked file list from RESPONSE using completing-read."
+  (let* ((linked-files (alist-get 'linked_files response))
+         (count (alist-get 'count response)))
+
+    (if (zerop count)
+        (message "No linked files found in database")
+
+      ;; Build candidates with metadata
+      (let* ((candidates nil)
+             (metadata-table (make-hash-table :test 'equal)))
+
+        (dotimes (i (length linked-files))
+          (let* ((file-info (aref linked-files i))
+                 (file-path (alist-get 'file_path file-info))
+                 (file-type (alist-get 'file_type file-info))
+                 (org-filename (alist-get 'org_filename file-info))
+                 (org-link-line (alist-get 'org_link_line file-info))
+                 (chunk-count (alist-get 'chunk_count file-info))
+                 (indexed-at (alist-get 'indexed_at file-info))
+                 ;; Format timestamp for display (remove microseconds if present)
+                 (display-time (if indexed-at
+                                  (replace-regexp-in-string "\\..*" "" indexed-at)
+                                "unknown"))
+                 ;; Format: [TYPE] filename | org-file:line | chunks | timestamp
+                 (candidate (format "[%-4s] %-40s | %s:%d | %d chunks | %s"
+                                   (upcase (or file-type ""))
+                                   (file-name-nondirectory file-path)
+                                   (file-name-nondirectory org-filename)
+                                   org-link-line
+                                   chunk-count
+                                   display-time)))
+
+            ;; Store metadata
+            (puthash candidate
+                    (list :file-path file-path
+                          :org-filename org-filename
+                          :org-link-line org-link-line)
+                    metadata-table)
+            (push candidate candidates)))
+
+        ;; Keep chronological order (most recent first, already sorted from server)
+        (setq candidates (nreverse candidates))
+
+        ;; Let user select
+        (let ((selection (completing-read
+                         (format "Open linked file (%d files in database): " count)
+                         candidates
+                         nil t)))
+          (when selection
+            (let* ((metadata (gethash selection metadata-table))
+                   (file-path (plist-get metadata :file-path))
+                   (org-filename (plist-get metadata :org-filename))
+                   (org-link-line (plist-get metadata :org-link-line)))
+              ;; With prefix arg, open the linked file directly
+              ;; Otherwise, open the org file and go to the link
+              (if current-prefix-arg
+                  (if (and file-path (file-exists-p file-path))
+                      (find-file file-path)
+                    (message "Linked file does not exist: %s" file-path))
+                ;; Default: open org file at link location
+                (when (and org-filename (file-exists-p org-filename))
+                  (find-file org-filename)
+                  (goto-char (point-min))
+                  (forward-line (1- org-link-line))
+                  (recenter))))))))))
 
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here

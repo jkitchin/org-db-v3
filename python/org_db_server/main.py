@@ -2,6 +2,11 @@
 import os
 import signal
 import logging
+
+# Disable tokenizer parallelism before any imports that use transformers
+# This prevents warnings when forking subprocesses (for docling worker)
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse

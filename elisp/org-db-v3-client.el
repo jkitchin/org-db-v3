@@ -24,17 +24,27 @@
 (defvar org-db-v3-index-processed 0
   "Number of files processed in current indexing operation.")
 
-(defcustom org-db-v3-index-delay 0.05
+(defcustom org-db-v3-index-delay 0.5
   "Delay in seconds between indexing files.
-Lower values = faster indexing but less responsive Emacs.
-Higher values = slower indexing but more responsive Emacs."
+Lower values = faster indexing but less responsive Emacs and higher server load.
+Higher values = slower indexing but more responsive Emacs and prevents server overload.
+Default 0.5s allows time for linked file processing to complete."
   :type 'number
   :group 'org-db-v3)
 
 (defun org-db-v3-index-file-async (filename)
   "Index FILENAME asynchronously by sending to server.
-Disables local variables and hooks for safe and fast bulk indexing."
+Disables local variables and hooks for safe and fast bulk indexing.
+Skips Emacs temporary files (.#*, #*#, *~)."
   (org-db-v3-ensure-server)
+
+  (let ((basename (file-name-nondirectory filename)))
+    ;; Skip Emacs temporary files
+    (when (or (string-prefix-p ".#" basename)
+              (and (string-prefix-p "#" basename)
+                   (string-suffix-p "#" basename))
+              (string-suffix-p "~" basename))
+      (error "Skipping Emacs temporary file: %s" filename)))
 
   (when (file-exists-p filename)
     (let ((already-open (find-buffer-visiting filename))
@@ -96,13 +106,26 @@ Disables local variables and hooks for safe and fast bulk indexing."
   "Recursively index all org files in DIRECTORY.
 Files are processed one at a time using timers to keep Emacs responsive."
   (interactive "DDirectory to index: ")
-  (let* ((org-files (directory-files-recursively
+  (let* ((all-files (directory-files-recursively
                      directory
                      "\\.org\\(\\.gpg\\)?\\'"
                      nil
                      (lambda (dir)
                        ;; Skip hidden directories and common ignore patterns
                        (not (string-match-p "/\\." (file-name-nondirectory dir))))))
+         ;; Filter out Emacs temporary files
+         (org-files (seq-filter
+                     (lambda (file)
+                       (let ((basename (file-name-nondirectory file)))
+                         (not (or
+                               ;; Emacs lock files: .#filename.org
+                               (string-prefix-p ".#" basename)
+                               ;; Emacs auto-save files: #filename.org#
+                               (and (string-prefix-p "#" basename)
+                                    (string-suffix-p "#" basename))
+                               ;; Emacs backup files: filename.org~
+                               (string-suffix-p "~" basename)))))
+                     all-files))
          (count (length org-files)))
     (if (zerop count)
         (message "No org files found in %s" directory)

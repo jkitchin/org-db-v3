@@ -2,9 +2,11 @@
 import logging
 import hashlib
 import os
+import sys
+import subprocess
+import json
 from pathlib import Path
 from typing import Optional, Dict, Any
-from docling.document_converter import DocumentConverter
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +19,16 @@ if 'HF_HUB_OFFLINE' not in os.environ:
 class DoclingService:
     """Service for converting documents to markdown using docling."""
 
-    # Supported file extensions (from docling documentation)
+    # Supported file extensions
     SUPPORTED_EXTENSIONS = {
-        # Office documents
-        '.pdf', '.docx', '.doc', '.xlsx', '.xls', '.pptx', '.ppt',
+        # PDFs (handled by pymupdf4llm - lightweight and fast)
+        '.pdf',
+        # DOCX (handled by python-docx - lightweight and fast)
+        '.docx',
+        # PPTX (handled by python-pptx - lightweight and fast)
+        '.pptx',
+        # Office documents (handled by docling in subprocess - last resort)
+        '.doc', '.xlsx', '.xls', '.ppt',
         # Web/markup formats
         '.html', '.htm', '.xhtml', '.md', '.markdown', '.asciidoc', '.adoc',
         # Data formats
@@ -31,19 +39,16 @@ class DoclingService:
         '.vtt', '.xml', '.json',
     }
 
-    def __init__(self):
-        """Initialize the docling service."""
-        self._converter: Optional[DocumentConverter] = None
-        logger.info("DoclingService initialized")
+    def __init__(self, use_subprocess: bool = True):
+        """Initialize the docling service.
 
-    @property
-    def converter(self) -> DocumentConverter:
-        """Lazy-load the document converter on first use."""
-        if self._converter is None:
-            logger.info("Loading docling DocumentConverter...")
-            self._converter = DocumentConverter()
-            logger.info("DocumentConverter loaded successfully")
-        return self._converter
+        Args:
+            use_subprocess: If True, run Docling in isolated subprocess (safer).
+                           If False, run in-process (faster but can crash server).
+        """
+        self.use_subprocess = use_subprocess
+        self._worker_path = Path(__file__).parent / "docling_worker.py"
+        logger.info(f"DoclingService initialized (subprocess={use_subprocess})")
 
     @staticmethod
     def calculate_md5(file_path: str) -> str:
@@ -126,12 +131,207 @@ class DoclingService:
             }
 
         # Convert document
+        ext = path.suffix.lower()
+
+        # Use lightweight libraries for common formats (fast, low memory)
+        if ext == '.pdf':
+            return self._convert_pdf_with_pymupdf(file_path, md5, file_size)
+        elif ext == '.docx':
+            return self._convert_docx_with_python_docx(file_path, md5, file_size)
+        elif ext == '.pptx':
+            return self._convert_pptx_with_python_pptx(file_path, md5, file_size)
+        elif self.use_subprocess:
+            # Run in isolated subprocess for safety (docling for other formats)
+            return self._convert_in_subprocess(file_path, max_file_size, md5, file_size)
+        else:
+            # Run in-process (legacy, not recommended)
+            return self._convert_in_process(file_path, md5, file_size)
+
+    def _convert_pdf_with_pymupdf(
+        self,
+        file_path: str,
+        md5: str,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """Convert PDF using lightweight pymupdf4llm (fast, low memory)."""
         try:
-            logger.info(f"Converting {file_path} to markdown...")
-            result = self.converter.convert(file_path)
+            import pymupdf4llm
+
+            logger.info(f"Converting PDF {file_path} with pymupdf4llm...")
+            markdown_text = pymupdf4llm.to_markdown(file_path)
+
+            logger.info(f"Successfully converted {file_path} ({len(markdown_text)} chars)")
+            return {
+                "status": "success",
+                "markdown": markdown_text,
+                "md5": md5,
+                "file_size": file_size
+            }
+
+        except Exception as e:
+            logger.error(f"Error converting PDF {file_path}: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "md5": md5,
+                "file_size": file_size
+            }
+
+    def _convert_docx_with_python_docx(
+        self,
+        file_path: str,
+        md5: str,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """Convert DOCX using lightweight python-docx (fast, low memory)."""
+        try:
+            from docx import Document
+
+            logger.info(f"Converting DOCX {file_path} with python-docx...")
+            doc = Document(file_path)
+            text = "\n".join([para.text for para in doc.paragraphs])
+
+            logger.info(f"Successfully converted {file_path} ({len(text)} chars)")
+            return {
+                "status": "success",
+                "markdown": text,  # Plain text, not markdown, but good enough
+                "md5": md5,
+                "file_size": file_size
+            }
+
+        except Exception as e:
+            logger.error(f"Error converting DOCX {file_path}: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "md5": md5,
+                "file_size": file_size
+            }
+
+    def _convert_pptx_with_python_pptx(
+        self,
+        file_path: str,
+        md5: str,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """Convert PPTX using lightweight python-pptx (fast, low memory)."""
+        try:
+            from pptx import Presentation
+
+            logger.info(f"Converting PPTX {file_path} with python-pptx...")
+            prs = Presentation(file_path)
+            text = []
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text"):
+                        text.append(shape.text)
+
+            result_text = "\n".join(text)
+
+            logger.info(f"Successfully converted {file_path} ({len(result_text)} chars)")
+            return {
+                "status": "success",
+                "markdown": result_text,  # Plain text, not markdown, but good enough
+                "md5": md5,
+                "file_size": file_size
+            }
+
+        except Exception as e:
+            logger.error(f"Error converting PPTX {file_path}: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "md5": md5,
+                "file_size": file_size
+            }
+
+    def _convert_in_subprocess(
+        self,
+        file_path: str,
+        max_file_size: int,
+        md5: str,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """Convert file using isolated subprocess (safe from crashes)."""
+        try:
+            logger.info(f"Converting {file_path} in subprocess...")
+
+            # Run worker process with timeout
+            cmd = [sys.executable, str(self._worker_path), file_path, str(max_file_size)]
+
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5 minute timeout
+                env={**os.environ, 'HF_HUB_OFFLINE': '0'},
+                start_new_session=True  # Isolate from parent process group
+            )
+
+            # Parse JSON output
+            try:
+                output = json.loads(result.stdout)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse worker output: {result.stdout}")
+                logger.error(f"Worker stderr: {result.stderr}")
+                return {
+                    "status": "error",
+                    "error": f"Worker output parse error: {str(e)}",
+                    "md5": md5,
+                    "file_size": file_size
+                }
+
+            # Check if worker crashed
+            if result.returncode not in (0, 1):
+                logger.error(f"Worker crashed with code {result.returncode}")
+                logger.error(f"Worker stderr: {result.stderr}")
+                return {
+                    "status": "error",
+                    "error": f"Worker crashed (code {result.returncode}): {output.get('error', 'unknown error')}",
+                    "md5": md5,
+                    "file_size": file_size
+                }
+
+            # Worker succeeded or failed gracefully
+            if output["status"] == "success":
+                logger.info(f"Successfully converted {file_path} ({len(output['markdown'])} chars)")
+
+            return output
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Conversion timeout for {file_path}")
+            return {
+                "status": "error",
+                "error": "Conversion timeout (5 minutes)",
+                "md5": md5,
+                "file_size": file_size
+            }
+        except Exception as e:
+            logger.error(f"Error in subprocess conversion: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": f"Subprocess error: {str(e)}",
+                "md5": md5,
+                "file_size": file_size
+            }
+
+    def _convert_in_process(self, file_path: str, md5: str, file_size: int) -> Dict[str, Any]:
+        """Convert file in-process (legacy, can crash server)."""
+        try:
+            from docling.document_converter import DocumentConverter
+
+            logger.info(f"Converting {file_path} in-process (UNSAFE)...")
+            converter = DocumentConverter()
+            result = converter.convert(file_path)
 
             # Export to markdown
             markdown_text = result.document.export_to_markdown()
+
+            # Force cleanup
+            del result
+            del converter
+            import gc
+            gc.collect()
 
             logger.info(f"Successfully converted {file_path} ({len(markdown_text)} chars)")
             return {
@@ -143,6 +343,8 @@ class DoclingService:
 
         except Exception as e:
             logger.error(f"Error converting {file_path}: {e}", exc_info=True)
+            import gc
+            gc.collect()
             return {
                 "status": "error",
                 "error": str(e),

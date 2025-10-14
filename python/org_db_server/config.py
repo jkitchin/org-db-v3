@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     chunk_size: int = 512
     chunk_overlap: int = 50
 
+    # Feature flags
+    enable_linked_files: bool = True  # Now using subprocess isolation for safety
+
     class Config:
         env_prefix = "ORG_DB_"
 

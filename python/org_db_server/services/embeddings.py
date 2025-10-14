@@ -16,8 +16,11 @@ class EmbeddingService:
         """Generate embedding for a single text."""
         return self.model.encode(text, convert_to_numpy=True)
 
-    def generate_embeddings(self, texts: List[str], batch_size: int = 32) -> List[np.ndarray]:
-        """Generate embeddings for multiple texts in batches."""
+    def generate_embeddings(self, texts: List[str], batch_size: int = 8) -> List[np.ndarray]:
+        """Generate embeddings for multiple texts in batches.
+
+        Reduced default batch size from 32 to 8 to use less memory during processing.
+        """
         embeddings = self.model.encode(
             texts,
             batch_size=batch_size,
