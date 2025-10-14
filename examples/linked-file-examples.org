@@ -5,3 +5,7 @@ You should be able to find these
 - [[./water-splitting.pptx]]  [[elisp:(org-db-v3-semantic-search "water splitting")]]
 
 - [[./emacs-orgmode.pdf]]  [[elisp:(org-db-v3-semantic-search "electronic lab notebook in emacs and org-mode")]]
+
+- [[./water-research-story-0.mp3]]  [[elisp:(org-db-v3-semantic-search "clean energy")]]
+
+- [[./catalyst-comparison.xlsx]]  [[elisp:(org-db-v3-semantic-search "catalyst efficiency")]]

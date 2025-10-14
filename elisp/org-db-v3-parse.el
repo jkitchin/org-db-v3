@@ -111,10 +111,11 @@ Images will be processed with OCR when indexed."
   :type 'boolean
   :group 'org-db-v3)
 
-(defcustom org-db-v3-index-audio-files nil
+(defcustom org-db-v3-index-audio-files t
   "Whether to index audio files linked from org files.
-Audio files are processed with ASR (speech recognition), which is
-slow and resource-intensive. Disabled by default."
+Audio files are processed with ASR (speech recognition) via markitdown,
+which extracts transcriptions for semantic search.
+Now enabled by default with markitdown support."
   :type 'boolean
   :group 'org-db-v3)
 
