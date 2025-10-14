@@ -51,10 +51,16 @@ Disables local variables and hooks for safe and fast bulk indexing."
             :headers '(("Content-Type" . "application/json"))
             :body json-data
             :as #'json-read
+            :timeout 120  ; Allow time for docling PDF/DOCX conversion
             :then (lambda (response)
-                    (message "Indexed %s (%d headlines)"
-                             filename
-                             (alist-get 'headlines_count response)))
+                    (let ((headlines (alist-get 'headlines_count response))
+                          (linked-files (alist-get 'linked_files_count response 0)))
+                      (if (> linked-files 0)
+                          (message "Indexed %s (%d headlines, %d linked file%s)"
+                                   filename headlines linked-files
+                                   (if (= linked-files 1) "" "s"))
+                        (message "Indexed %s (%d headlines)"
+                                 filename headlines))))
             :else (lambda (error)
                     (message "Error indexing %s: %s" filename error))))
         ;; Kill buffer if it wasn't already open

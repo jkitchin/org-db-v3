@@ -8,9 +8,13 @@ from org_db_server.services.database import Database
 from org_db_server.services.chunking import chunk_text
 from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.services.clip_service import get_clip_service
+from org_db_server.services.docling_service import get_docling_service
 from org_db_server.config import settings
 from pathlib import Path
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["indexing"])
 
@@ -68,6 +72,13 @@ async def delete_file(filename: str) -> Dict[str, Any]:
 async def index_file(request: IndexFileRequest):
     """Index an org file."""
     try:
+        # Debug: Log what we received
+        logger.info(f"Indexing file: {request.filename}")
+        logger.info(f"  Headlines: {len(request.headlines)}")
+        logger.info(f"  Links: {len(request.links)}")
+        logger.info(f"  Images: {len(request.images)}")
+        logger.info(f"  Linked files: {len(request.linked_files)}")
+
         # Get or create file entry
         file_id = db.get_or_create_file_id(
             request.filename,
@@ -206,13 +217,78 @@ async def index_file(request: IndexFileRequest):
             else:
                 print(f"DEBUG: No valid images to process after path resolution")
 
+        # Process linked files (PDF, DOCX, etc.)
+        linked_files_indexed = 0
+        if request.linked_files:
+            logger.info(f"Processing {len(request.linked_files)} linked files for {request.filename}")
+            docling = get_docling_service()
+
+            for linked_file in request.linked_files:
+                try:
+                    file_path = linked_file.file_path
+                    org_link_line = linked_file.org_link_line
+
+                    logger.info(f"Converting linked file: {file_path}")
+
+                    # Convert file to markdown
+                    conversion = docling.convert_to_markdown(file_path)
+
+                    # Determine file type
+                    file_type = Path(file_path).suffix.lstrip('.')
+
+                    # Create/update linked file entry
+                    linked_file_id = db.get_or_create_linked_file(
+                        org_file_id=file_id,
+                        org_link_line=org_link_line,
+                        file_path=file_path,
+                        file_type=file_type,
+                        file_size=conversion.get('file_size', 0),
+                        md5=conversion.get('md5', ''),
+                        conversion_status=conversion['status'],
+                        conversion_error=conversion.get('error')
+                    )
+
+                    # If conversion succeeded, chunk and index
+                    if conversion['status'] == 'success':
+                        markdown = conversion['markdown']
+
+                        # Chunk the markdown
+                        chunk_results = chunk_text(markdown, method="paragraph")
+
+                        if chunk_results:
+                            # Generate embeddings
+                            texts = [c['text'] for c in chunk_results]
+                            embeddings = embedding_service.generate_embeddings(texts)
+
+                            # Store chunks
+                            db.store_linked_file_chunks(
+                                org_file_id=file_id,
+                                org_link_line=org_link_line,
+                                linked_file_id=linked_file_id,
+                                chunks=chunk_results,
+                                embeddings=embeddings,
+                                model_name=embedding_service.model_name
+                            )
+
+                            linked_files_indexed += 1
+                            logger.info(f"Indexed linked file: {file_path} ({len(chunk_results)} chunks)")
+                        else:
+                            logger.warning(f"No chunks generated for {file_path}")
+                    else:
+                        logger.warning(f"Conversion failed for {file_path}: {conversion.get('error')}")
+
+                except Exception as e:
+                    logger.error(f"Error processing linked file {linked_file.file_path}: {e}", exc_info=True)
+                    # Continue with other files
+
         db.conn.commit()
 
         return IndexFileResponse(
             file_id=file_id,
             status="indexed",
             headlines_count=len(request.headlines),
-            links_count=len(request.links)
+            links_count=len(request.links),
+            linked_files_count=linked_files_indexed
         )
 
     except Exception as e:

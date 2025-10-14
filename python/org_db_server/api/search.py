@@ -46,10 +46,13 @@ async def semantic_search(request: SemanticSearchRequest):
                 c.chunk_type,
                 c.begin_line,
                 c.end_line,
-                f.filename
+                f.filename,
+                lf.file_path as linked_file_path,
+                lf.file_type as linked_file_type
             FROM embeddings e
             JOIN chunks c ON e.chunk_id = c.rowid
             JOIN files f ON c.filename_id = f.rowid
+            LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
         """
 
         params = [model_name]
@@ -93,14 +96,26 @@ async def semantic_search(request: SemanticSearchRequest):
             # Calculate cosine similarity
             similarity = embedding_service.similarity(query_embedding, stored_embedding)
 
+            # Add file extension prefix for non-org files
+            chunk_text = row[2]
+            linked_file_path = row[7]
+            linked_file_type = row[8]
+
+            if linked_file_path and linked_file_type:
+                # Extract extension from file type or path
+                ext = linked_file_type.upper() if linked_file_type else linked_file_path.split('.')[-1].upper()
+                chunk_text = f"[{ext}] {chunk_text}"
+
             result_data = {
                 "chunk_id": row[0],
-                "chunk_text": row[2],
+                "chunk_text": chunk_text,
                 "chunk_type": row[3],
                 "begin_line": row[4],
                 "end_line": row[5],
                 "filename": row[6],
-                "similarity_score": float(similarity)
+                "similarity_score": float(similarity),
+                "linked_file_path": linked_file_path,
+                "linked_file_type": linked_file_type
             }
 
             results_with_scores.append((similarity, result_data))

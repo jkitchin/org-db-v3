@@ -21,8 +21,8 @@ def test_all_core_tables_exist(temp_db):
         'headline_properties', 'keywords', 'file_keywords', 'links',
         'hashtags', 'file_hashtags', 'atlabels', 'file_atlabels',
         'email_addresses', 'file_email_addresses', 'src_blocks',
-        'timestamps', 'chunks', 'embeddings', 'images', 'image_embeddings',
-        'fts_content'
+        'timestamps', 'linked_files', 'chunks', 'embeddings', 'images', 'image_embeddings',
+        'fts_content', 'schema_version'
     ]
 
     for table_name in expected_tables:
@@ -73,7 +73,7 @@ def test_chunks_and_embeddings_tables(temp_db):
     chunk_columns = {row[1] for row in cursor.fetchall()}
     expected_chunk_cols = {
         'filename_id', 'headline_id', 'chunk_text', 'chunk_type',
-        'begin_line', 'end_line', 'char_offset'
+        'begin_line', 'end_line', 'char_offset', 'linked_file_id'
     }
     assert expected_chunk_cols.issubset(chunk_columns), f"Missing columns in chunks table: {expected_chunk_cols - chunk_columns}"
 
@@ -84,6 +84,19 @@ def test_chunks_and_embeddings_tables(temp_db):
         'chunk_id', 'embedding_model', 'embedding_vector', 'embedding_dim', 'created_at'
     }
     assert expected_embedding_cols.issubset(embedding_columns), f"Missing columns in embeddings table: {expected_embedding_cols - embedding_columns}"
+
+def test_linked_files_table(temp_db):
+    """Test that linked_files table exists with proper structure."""
+    cursor = temp_db.conn.cursor()
+
+    cursor.execute("PRAGMA table_info(linked_files)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    expected_columns = {
+        'org_file_id', 'org_link_line', 'file_path', 'file_type', 'file_size',
+        'md5', 'last_converted', 'conversion_status', 'conversion_error', 'indexed_at'
+    }
+    assert expected_columns.issubset(columns), f"Missing columns in linked_files table: {expected_columns - columns}"
 
 def test_images_tables_exist(temp_db):
     """Test that image-related tables exist."""

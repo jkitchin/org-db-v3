@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-multipart>=0.0.6",
     "sse-starlette>=1.8.2",
+    "docling>=2.0.0",
 ]
 
 [project.optional-dependencies]

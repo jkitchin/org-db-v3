@@ -44,6 +44,11 @@ class ImageData(BaseModel):
     path: str
     begin: int
 
+class LinkedFileData(BaseModel):
+    """Linked file data from Emacs."""
+    file_path: str
+    org_link_line: int
+
 class IndexFileRequest(BaseModel):
     """Request to index a file."""
     filename: str
@@ -55,6 +60,7 @@ class IndexFileRequest(BaseModel):
     keywords: List[KeywordData] = Field(default_factory=list)
     src_blocks: List[SrcBlockData] = Field(default_factory=list)
     images: List[ImageData] = Field(default_factory=list)
+    linked_files: List[LinkedFileData] = Field(default_factory=list)
 
 class IndexFileResponse(BaseModel):
     """Response from indexing a file."""
@@ -62,6 +68,7 @@ class IndexFileResponse(BaseModel):
     status: str
     headlines_count: int
     links_count: int
+    linked_files_count: int = 0
 
 class SemanticSearchRequest(BaseModel):
     """Request for semantic search."""
@@ -83,6 +90,8 @@ class SearchResult(BaseModel):
     begin_line: int
     end_line: int
     reranked: bool = False
+    linked_file_path: Optional[str] = None
+    linked_file_type: Optional[str] = None
 
 class SemanticSearchResponse(BaseModel):
     """Response from semantic search."""

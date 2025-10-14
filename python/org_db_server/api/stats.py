@@ -17,9 +17,14 @@ async def get_stats():
 
     stats = {}
 
-    # File count
+    # Org file count
     cursor.execute("SELECT COUNT(*) FROM files")
     stats["files_count"] = cursor.fetchone()[0]
+    stats["org_files_count"] = stats["files_count"]  # Alias for clarity
+
+    # Linked files count (PDF, DOCX, etc.)
+    cursor.execute("SELECT COUNT(*) FROM linked_files")
+    stats["linked_files_count"] = cursor.fetchone()[0]
 
     # Headline count
     cursor.execute("SELECT COUNT(*) FROM headlines")

@@ -116,6 +116,8 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                  (similarity (alist-get 'similarity_score result))
                  (begin-line (alist-get 'begin_line result))
                  (end-line (alist-get 'end_line result))
+                 (linked-file-path (alist-get 'linked_file_path result))
+                 (linked-file-type (alist-get 'linked_file_type result))
                  ;; Truncate and clean chunk text for display
                  (context-width 60)
                  (display-text (replace-regexp-in-string
@@ -125,6 +127,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                                  chunk-text)))
                  ;; Pad context to fixed width for alignment
                  (padded-context (format (format "%%-%ds" context-width) display-text))
+                 ;; Note: File type prefix is now added by the Python API in chunk-text
                  ;; Format with fixed-width columns: score | context | filename:line
                  (candidate (format "%-6.3f | %s | %s:%d"
                                    similarity
@@ -137,7 +140,9 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                     (list :file filename
                           :line begin-line
                           :end-line end-line
-                          :text chunk-text)
+                          :text chunk-text
+                          :linked-file-path linked-file-path
+                          :linked-file-type linked-file-type)
                     metadata-table)
             (push candidate candidates)))
 
