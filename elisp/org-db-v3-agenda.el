@@ -106,6 +106,9 @@ BEFORE-DATE is a date string like \"+2w\", \"+1m\", or \"2025-12-31\"."
                                    filename))
                  ;; Determine face based on date
                  (face (cond
+                        ;; gcal.org items get a pleasing blue color
+                        ((string-match-p "gcal\\.org" filename)
+                         '(:foreground "steel blue"))
                         ((string= priority "A") '(:foreground "red1" :weight bold))
                         (scheduled '(:foreground "DarkOrange3"))
                         ((and deadline
