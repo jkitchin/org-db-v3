@@ -10,24 +10,48 @@ logger = logging.getLogger(__name__)
 class DoclingService:
     """Service for converting documents to markdown using lightweight libraries.
 
-    Supports:
+    Priority handlers (faster, tested):
     - PDF files via pymupdf4llm
     - DOCX files via python-docx
     - PPTX files via python-pptx
 
-    Other formats are not supported and will be logged.
+    Fallback handler via markitdown for:
+    - Excel (.xlsx, .xls, .csv)
+    - Images (.png, .jpg, .jpeg, .gif, .bmp)
+    - Audio (.mp3, .wav, .m4a)
+    - HTML (.html, .htm)
+    - Text formats (.json, .xml)
+    - ZIP files (.zip)
+    - And more...
     """
 
-    # Supported file extensions (only lightweight libraries)
-    SUPPORTED_EXTENSIONS = {
-        '.pdf',   # pymupdf4llm
-        '.docx',  # python-docx
-        '.pptx',  # python-pptx
+    # Priority formats (use specialized libraries)
+    PRIORITY_EXTENSIONS = {
+        '.pdf',   # pymupdf4llm (fastest for PDFs)
+        '.docx',  # python-docx (fastest for Word)
+        '.pptx',  # python-pptx (fastest for PowerPoint)
     }
+
+    # Supported via markitdown (fallback)
+    MARKITDOWN_EXTENSIONS = {
+        '.xlsx', '.xls', '.csv',  # Excel/spreadsheets
+        '.html', '.htm',          # Web pages
+        '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',  # Images
+        '.mp3', '.wav', '.m4a',   # Audio
+        '.json', '.xml',          # Text formats
+        '.zip',                   # Archives
+        '.epub',                  # eBooks
+        '.ppt',                   # Legacy PowerPoint (via markitdown)
+        '.doc',                   # Legacy Word (via markitdown)
+    }
+
+    # All supported extensions
+    SUPPORTED_EXTENSIONS = PRIORITY_EXTENSIONS | MARKITDOWN_EXTENSIONS
 
     def __init__(self):
         """Initialize the document conversion service."""
-        logger.info("DoclingService initialized with lightweight libraries (PDF, DOCX, PPTX)")
+        self._markitdown = None  # Lazy load
+        logger.info("DoclingService initialized (priority: pymupdf4llm/python-docx/python-pptx, fallback: markitdown)")
 
     @staticmethod
     def calculate_md5(file_path: str) -> str:
@@ -39,11 +63,11 @@ class DoclingService:
         return hash_md5.hexdigest()
 
     def is_supported(self, file_path: str) -> bool:
-        """Check if a file extension is supported (PDF, DOCX, PPTX only)."""
+        """Check if a file extension is supported."""
         ext = Path(file_path).suffix.lower()
         is_supported = ext in self.SUPPORTED_EXTENSIONS
         if not is_supported and ext:
-            logger.warning(f"File type '{ext}' is not supported yet (only PDF, DOCX, PPTX)")
+            logger.warning(f"File type '{ext}' is not supported")
         return is_supported
 
     def convert_to_markdown(
@@ -115,18 +139,31 @@ class DoclingService:
         # Convert document based on extension
         ext = path.suffix.lower()
 
-        if ext == '.pdf':
-            return self._convert_pdf_with_pymupdf(file_path, md5, file_size)
-        elif ext == '.docx':
-            return self._convert_docx_with_python_docx(file_path, md5, file_size)
-        elif ext == '.pptx':
-            return self._convert_pptx_with_python_pptx(file_path, md5, file_size)
-        else:
-            # Unsupported format
-            logger.warning(f"Cannot convert {file_path}: unsupported file type '{ext}'")
+        try:
+            # Use priority handlers for known formats (faster)
+            if ext == '.pdf':
+                return self._convert_pdf_with_pymupdf(file_path, md5, file_size)
+            elif ext == '.docx':
+                return self._convert_docx_with_python_docx(file_path, md5, file_size)
+            elif ext == '.pptx':
+                return self._convert_pptx_with_python_pptx(file_path, md5, file_size)
+            elif ext in self.MARKITDOWN_EXTENSIONS:
+                # Use markitdown for other supported formats
+                return self._convert_with_markitdown(file_path, md5, file_size)
+            else:
+                # Unsupported format
+                logger.warning(f"Cannot convert {file_path}: unsupported file type '{ext}'")
+                return {
+                    "status": "error",
+                    "error": f"Unsupported file type: {ext}",
+                    "md5": md5,
+                    "file_size": file_size
+                }
+        except Exception as e:
+            logger.error(f"Unexpected error converting {file_path}: {e}", exc_info=True)
             return {
                 "status": "error",
-                "error": f"Unsupported file type: {ext} (only PDF, DOCX, PPTX supported)",
+                "error": f"Conversion failed: {str(e)}",
                 "md5": md5,
                 "file_size": file_size
             }
@@ -229,6 +266,41 @@ class DoclingService:
                 "file_size": file_size
             }
 
+    def _convert_with_markitdown(
+        self,
+        file_path: str,
+        md5: str,
+        file_size: int
+    ) -> Dict[str, Any]:
+        """Convert file using markitdown (fallback for various formats)."""
+        try:
+            # Lazy load markitdown
+            if self._markitdown is None:
+                from markitdown import MarkItDown
+                self._markitdown = MarkItDown()
+
+            ext = Path(file_path).suffix.lower()
+            logger.info(f"Converting {ext} file {file_path} with markitdown...")
+
+            result = self._markitdown.convert(file_path)
+            markdown_text = result.text_content
+
+            logger.info(f"Successfully converted {file_path} ({len(markdown_text)} chars)")
+            return {
+                "status": "success",
+                "markdown": markdown_text,
+                "md5": md5,
+                "file_size": file_size
+            }
+
+        except Exception as e:
+            logger.error(f"Error converting {file_path} with markitdown: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "error": str(e),
+                "md5": md5,
+                "file_size": file_size
+            }
 
 
 # Global instance

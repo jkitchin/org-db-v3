@@ -18,6 +18,8 @@ dependencies = [
     "pymupdf4llm>=0.0.5",
     "python-docx>=1.0.0",
     "python-pptx>=0.6.0",
+    "markitdown[all]>=0.0.1",
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
