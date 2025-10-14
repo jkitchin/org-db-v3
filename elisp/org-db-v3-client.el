@@ -35,8 +35,12 @@ Default 0.5s allows time for linked file processing to complete."
 (defun org-db-v3-index-file-async (filename)
   "Index FILENAME asynchronously by sending to server.
 Disables local variables and hooks for safe and fast bulk indexing.
-Skips Emacs temporary files (.#*, #*#, *~)."
+Skips Emacs temporary files (.#*, #*#, *~) and remote Tramp files."
   (org-db-v3-ensure-server)
+
+  ;; Skip remote Tramp files
+  (when (file-remote-p filename)
+    (error "Skipping remote Tramp file: %s" filename))
 
   (let ((basename (file-name-nondirectory filename)))
     ;; Skip Emacs temporary files
@@ -103,15 +107,22 @@ Waits for each request to complete before processing the next file."
 This ensures requests are processed sequentially, not in parallel."
   (org-db-v3-ensure-server)
 
-  (let ((basename (file-name-nondirectory filename)))
-    ;; Skip Emacs temporary files
-    (when (or (string-prefix-p ".#" basename)
-              (and (string-prefix-p "#" basename)
-                   (string-suffix-p "#" basename))
-              (string-suffix-p "~" basename))
-      (error "Skipping Emacs temporary file: %s" filename)))
+  ;; Skip remote Tramp files
+  (if (file-remote-p filename)
+      (progn
+        (message "Skipping remote Tramp file: %s" filename)
+        ;; Continue with next file in queue
+        (run-with-timer org-db-v3-index-delay nil #'org-db-v3-process-index-queue))
 
-  (when (file-exists-p filename)
+    (let ((basename (file-name-nondirectory filename)))
+      ;; Skip Emacs temporary files
+      (when (or (string-prefix-p ".#" basename)
+                (and (string-prefix-p "#" basename)
+                     (string-suffix-p "#" basename))
+                (string-suffix-p "~" basename))
+        (error "Skipping Emacs temporary file: %s" filename)))
+
+    (when (file-exists-p filename)
     (let ((already-open (find-buffer-visiting filename))
           buf)
       ;; Bind these BEFORE opening the file so they take effect during file loading
@@ -144,12 +155,13 @@ This ensures requests are processed sequentially, not in parallel."
                     (run-with-timer org-db-v3-index-delay nil #'org-db-v3-process-index-queue))))
         ;; Kill buffer if it wasn't already open
         (unless already-open
-          (kill-buffer buf))))))
+          (kill-buffer buf)))))))
 
 ;;;###autoload
 (defun org-db-v3-index-directory (directory)
   "Recursively index all org files in DIRECTORY.
-Files are processed one at a time using timers to keep Emacs responsive."
+Files are processed one at a time using timers to keep Emacs responsive.
+Skips remote Tramp files."
   (interactive "DDirectory to index: ")
   (let* ((all-files (directory-files-recursively
                      directory
@@ -158,11 +170,13 @@ Files are processed one at a time using timers to keep Emacs responsive."
                      (lambda (dir)
                        ;; Skip hidden directories and common ignore patterns
                        (not (string-match-p "/\\." (file-name-nondirectory dir))))))
-         ;; Filter out Emacs temporary files
+         ;; Filter out Emacs temporary files and Tramp remote files
          (org-files (seq-filter
                      (lambda (file)
                        (let ((basename (file-name-nondirectory file)))
                          (not (or
+                               ;; Remote Tramp files
+                               (file-remote-p file)
                                ;; Emacs lock files: .#filename.org
                                (string-prefix-p ".#" basename)
                                ;; Emacs auto-save files: #filename.org#
@@ -201,7 +215,8 @@ Files are processed one at a time using timers to keep Emacs responsive."
   "Reindex all files currently in the database.
 Fetches the list of files from the server and reindexes each one.
 Also removes files that no longer exist from the database.
-Uses non-blocking queue processing to keep Emacs responsive."
+Uses non-blocking queue processing to keep Emacs responsive.
+Skips remote Tramp files."
   (interactive)
   (org-db-v3-ensure-server)
 
@@ -211,26 +226,36 @@ Uses non-blocking queue processing to keep Emacs responsive."
             (let* ((files (alist-get 'files response))
                    (count (length files))
                    (missing-files nil)
-                   (existing-files nil))
+                   (existing-files nil)
+                   (remote-files nil))
 
-              ;; Classify files as existing or missing
+              ;; Classify files as existing, missing, or remote
               (dotimes (i count)
                 (let ((filename (alist-get 'filename (aref files i))))
-                  (if (file-exists-p filename)
-                      (push filename existing-files)
-                    (push filename missing-files))))
+                  (cond
+                   ((file-remote-p filename)
+                    (push filename remote-files))
+                   ((file-exists-p filename)
+                    (push filename existing-files))
+                   (t
+                    (push filename missing-files)))))
 
               (if (zerop count)
                   (message "No files found in database")
 
                 ;; Show summary and confirm
-                (let ((msg (format "Reindex %d existing file%s%s? "
+                (let ((msg (format "Reindex %d existing file%s%s%s? "
                                   (length existing-files)
                                   (if (= (length existing-files) 1) "" "s")
                                   (if missing-files
-                                      (format " (and remove %d missing file%s)"
+                                      (format ", remove %d missing file%s"
                                              (length missing-files)
                                              (if (= (length missing-files) 1) "" "s"))
+                                    "")
+                                  (if remote-files
+                                      (format ", skip %d remote file%s"
+                                             (length remote-files)
+                                             (if (= (length remote-files) 1) "" "s"))
                                     ""))))
                   (when (yes-or-no-p msg)
                     ;; Delete missing files from database immediately
@@ -239,6 +264,14 @@ Uses non-blocking queue processing to keep Emacs responsive."
                               (length missing-files)
                               (if (= (length missing-files) 1) "" "s"))
                       (dolist (filename missing-files)
+                        (org-db-v3-delete-file-async filename)))
+
+                    ;; Remove remote files from database
+                    (when remote-files
+                      (message "Removing %d remote file%s from database..."
+                              (length remote-files)
+                              (if (= (length remote-files) 1) "" "s"))
+                      (dolist (filename remote-files)
                         (org-db-v3-delete-file-async filename)))
 
                     ;; Reindex existing files using non-blocking queue
@@ -286,6 +319,30 @@ Uses non-blocking queue processing to keep Emacs responsive."
               org-db-v3-index-total 0
               org-db-v3-index-processed 0))
     (message "No indexing operation in progress")))
+
+;;;###autoload
+(defun org-db-v3-clear-database ()
+  "Clear the entire database by removing the database file.
+
+WARNING: This is destructive and cannot be undone!
+All indexed data will be permanently deleted.
+
+Prompts for confirmation before proceeding."
+  (interactive)
+  (org-db-v3-ensure-server)
+
+  (when (yes-or-no-p "Clear entire database? This cannot be undone! ")
+    (plz 'delete (concat (org-db-v3-server-url) "/api/stats/clear-database")
+      :as #'json-read
+      :then (lambda (response)
+              (let ((status (alist-get 'status response))
+                    (message-text (alist-get 'message response))
+                    (db-path (alist-get 'db_path response)))
+                (if (string= status "success")
+                    (message "Database cleared: %s" db-path)
+                  (message "Error: %s" message-text))))
+      :else (lambda (error)
+              (message "Error clearing database: %s" (plz-error-message error))))))
 
 (provide 'org-db-v3-client)
 ;;; org-db-v3-client.el ends here

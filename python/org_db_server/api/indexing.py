@@ -10,7 +10,7 @@ from org_db_server.services.database import Database
 from org_db_server.services.chunking import chunk_text
 from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.services.clip_service import get_clip_service
-from org_db_server.services.docling_service import get_docling_service
+from org_db_server.services.document_converter import get_document_converter
 from org_db_server.config import settings
 from pathlib import Path
 import logging
@@ -251,7 +251,9 @@ async def index_file(request: IndexFileRequest):
         if request.linked_files and settings.enable_linked_files:
             log_memory_usage(f"before processing {len(request.linked_files)} linked files")
             logger.info(f"Processing {len(request.linked_files)} linked files for {request.filename}")
-            docling = get_docling_service()
+            converter = get_document_converter()
+            # Initialize embedding service for linked files
+            embedding_service = get_embedding_service()
 
             for idx, linked_file in enumerate(request.linked_files, 1):
                 try:
@@ -261,25 +263,31 @@ async def index_file(request: IndexFileRequest):
                     log_memory_usage(f"before converting linked file {idx}/{len(request.linked_files)}: {Path(file_path).name}")
                     logger.info(f"Converting linked file: {file_path}")
 
-                    # Convert file to markdown
-                    # PDFs use lightweight pymupdf4llm, others use docling in subprocess
-                    conversion = docling.convert_to_markdown(file_path)
+                    # Convert file to markdown (audio files skipped by default)
+                    conversion = converter.convert_to_markdown(file_path)
                     log_memory_usage(f"after converting {Path(file_path).name}")
 
                     # Determine file type
                     file_type = Path(file_path).suffix.lstrip('.')
 
-                    # Create/update linked file entry
-                    linked_file_id = db.get_or_create_linked_file(
-                        org_file_id=file_id,
-                        org_link_line=org_link_line,
-                        file_path=file_path,
-                        file_type=file_type,
-                        file_size=conversion.get('file_size', 0),
-                        md5=conversion.get('md5', ''),
-                        conversion_status=conversion['status'],
-                        conversion_error=conversion.get('error')
-                    )
+                    # Create/update linked file entry only if conversion was attempted
+                    # (Skip creating entry for skipped files to avoid NULL md5)
+                    if conversion['status'] in ('success', 'error'):
+                        # Use md5 from conversion (should exist for success/error)
+                        linked_file_id = db.get_or_create_linked_file(
+                            org_file_id=file_id,
+                            org_link_line=org_link_line,
+                            file_path=file_path,
+                            file_type=file_type,
+                            file_size=conversion.get('file_size', 0),
+                            md5=conversion.get('md5', ''),
+                            conversion_status=conversion['status'],
+                            conversion_error=conversion.get('error')
+                        )
+                    elif conversion['status'] == 'skipped':
+                        # For skipped files, we don't create a linked_file entry
+                        logger.info(f"Skipped file {file_path}, not creating linked_file entry: {conversion.get('error')}")
+                        continue  # Skip to next file
 
                     # If conversion succeeded, chunk and index
                     if conversion['status'] == 'success':

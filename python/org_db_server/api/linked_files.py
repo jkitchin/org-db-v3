@@ -4,7 +4,7 @@ from typing import List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from org_db_server.services.docling_service import get_docling_service
+from org_db_server.services.document_converter import get_document_converter
 from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.services.database import Database
 from org_db_server.services.chunking import chunk_text
@@ -43,7 +43,7 @@ async def index_linked_file(request: LinkedFileRequest):
     """Index a file linked from an org file.
 
     This endpoint:
-    1. Converts the file to markdown using docling
+    1. Converts the file to markdown using document converter
     2. Chunks the markdown
     3. Generates embeddings
     4. Stores chunks in database (pointing to org file location)
@@ -53,7 +53,7 @@ async def index_linked_file(request: LinkedFileRequest):
     """
     try:
         # Get services
-        docling = get_docling_service()
+        converter = get_document_converter()
         embedding_service = get_embedding_service()
 
         # Get org file ID
@@ -71,7 +71,7 @@ async def index_linked_file(request: LinkedFileRequest):
 
         # Convert file to markdown
         logger.info(f"Converting linked file: {request.file_path}")
-        conversion_result = docling.convert_to_markdown(
+        conversion_result = converter.convert_to_markdown(
             request.file_path,
             max_file_size=request.max_file_size
         )

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Test script to verify docling installation and conversion."""
+"""Test script to verify document converter installation and conversion."""
 import sys
 from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
-from org_db_server.services.docling_service import get_docling_service
+from org_db_server.services.document_converter import get_document_converter
 
 
 def test_markdown_conversion():
     """Test converting a simple markdown file."""
     # Create a test markdown file
-    test_file = Path("/tmp/test_docling.md")
+    test_file = Path("/tmp/test_document_converter.md")
     test_content = """# Test Document
 
-This is a test document for docling conversion.
+This is a test document for document conversion.
 
 ## Section 1
 
@@ -37,8 +37,8 @@ This is the end of the test document.
     print()
 
     # Test conversion
-    service = get_docling_service()
-    print("Testing docling conversion...")
+    service = get_document_converter()
+    print("Testing document conversion...")
     print()
 
     result = service.convert_to_markdown(str(test_file))
@@ -66,7 +66,7 @@ This is the end of the test document.
 
 def test_supported_extensions():
     """Test checking supported extensions."""
-    service = get_docling_service()
+    service = get_document_converter()
 
     print("\nSupported extensions:")
     print("-" * 60)
@@ -96,7 +96,7 @@ def test_supported_extensions():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("Docling Installation Test")
+    print("Document Converter Installation Test")
     print("=" * 60)
     print()
 
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print()
         print("=" * 60)
         if success:
-            print("✅ All tests passed! Docling is working correctly.")
+            print("✅ All tests passed! Document converter is working correctly.")
         else:
             print("❌ Tests failed. See errors above.")
         print("=" * 60)

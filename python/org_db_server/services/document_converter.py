@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 
-class DoclingService:
+class DocumentConverter:
     """Service for converting documents to markdown using lightweight libraries.
 
     Priority handlers (faster, tested):
@@ -32,25 +32,32 @@ class DoclingService:
         '.pptx',  # python-pptx (fastest for PowerPoint)
     }
 
+    # Audio formats (can cause multiprocessing leaks in markitdown)
+    AUDIO_EXTENSIONS = {'.mp3', '.wav', '.m4a', '.ogg', '.flac'}
+
     # Supported via markitdown (fallback)
     MARKITDOWN_EXTENSIONS = {
         '.xlsx', '.xls', '.csv',  # Excel/spreadsheets
         '.html', '.htm',          # Web pages
         '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff',  # Images
-        '.mp3', '.wav', '.m4a',   # Audio
         '.json', '.xml',          # Text formats
         '.zip',                   # Archives
         '.epub',                  # eBooks
         '.ppt',                   # Legacy PowerPoint (via markitdown)
         '.doc',                   # Legacy Word (via markitdown)
-    }
+    } | AUDIO_EXTENSIONS  # Include audio in markitdown extensions
 
     # All supported extensions
     SUPPORTED_EXTENSIONS = PRIORITY_EXTENSIONS | MARKITDOWN_EXTENSIONS
 
-    def __init__(self):
-        """Initialize the document conversion service."""
-        logger.info("DoclingService initialized (priority: pymupdf4llm/python-docx/python-pptx, fallback: markitdown)")
+    def __init__(self, skip_audio: bool = True):
+        """Initialize the document conversion service.
+
+        Args:
+            skip_audio: If True, skip audio files to avoid multiprocessing leaks from markitdown.
+        """
+        self.skip_audio = skip_audio
+        logger.info(f"DocumentConverter initialized (priority: pymupdf4llm/python-docx/python-pptx, fallback: markitdown, skip_audio: {skip_audio})")
 
     @staticmethod
     def calculate_md5(file_path: str) -> str:
@@ -75,7 +82,7 @@ class DoclingService:
         max_file_size: int = 52428800  # 50MB default
     ) -> Dict[str, Any]:
         """
-        Convert a document to markdown using docling.
+        Convert a document to markdown using specialized libraries.
 
         Args:
             file_path: Path to the file to convert
@@ -113,12 +120,22 @@ class DoclingService:
             }
 
         # Check extension
+        ext = path.suffix.lower()
         if not self.is_supported(file_path):
-            ext = path.suffix
             logger.warning(f"Unsupported file extension: {ext}")
             return {
                 "status": "error",
                 "error": f"Unsupported file extension: {ext}",
+                "md5": None,
+                "file_size": file_size
+            }
+
+        # Skip audio files if configured (to avoid multiprocessing leaks)
+        if self.skip_audio and ext in self.AUDIO_EXTENSIONS:
+            logger.info(f"Skipping audio file {file_path} (skip_audio=True)")
+            return {
+                "status": "skipped",
+                "error": "Audio files skipped to avoid multiprocessing leaks",
                 "md5": None,
                 "file_size": file_size
             }
@@ -313,12 +330,12 @@ class DoclingService:
 
 
 # Global instance
-_docling_service: Optional[DoclingService] = None
+_document_converter: Optional[DocumentConverter] = None
 
 
-def get_docling_service() -> DoclingService:
+def get_document_converter() -> DocumentConverter:
     """Get or create the global document conversion service instance."""
-    global _docling_service
-    if _docling_service is None:
-        _docling_service = DoclingService()
-    return _docling_service
+    global _document_converter
+    if _document_converter is None:
+        _document_converter = DocumentConverter(skip_audio=True)
+    return _document_converter

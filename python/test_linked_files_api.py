@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from org_db_server.services.database import Database
-from org_db_server.services.docling_service import get_docling_service
+from org_db_server.services.document_converter import get_document_converter
 from org_db_server.services.embeddings import get_embedding_service
 from org_db_server.services.chunking import chunk_text
 
@@ -49,10 +49,10 @@ def test_linked_file_workflow():
     """)
     print(f"   ✅ Created test HTML file: {test_html}")
 
-    # Test docling conversion
-    print("\n2. Testing docling conversion...")
-    docling = get_docling_service()
-    conversion = docling.convert_to_markdown(str(test_html))
+    # Test document conversion
+    print("\n2. Testing document conversion...")
+    converter = get_document_converter()
+    conversion = converter.convert_to_markdown(str(test_html))
 
     if conversion['status'] != 'success':
         print(f"   ❌ Conversion failed: {conversion.get('error')}")

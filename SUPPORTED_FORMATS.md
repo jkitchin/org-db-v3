@@ -1,6 +1,8 @@
-# Docling Supported Formats
+# Supported Document Formats
 
 Comprehensive list of file formats that can be indexed when linked from org files.
+
+> **Note**: This project originally used Docling for document conversion, but it was **removed due to frequent segmentation faults** causing server crashes. We now use lightweight specialized libraries (pymupdf4llm, python-docx, python-pptx) with markitdown as a fallback. This approach is more stable and faster for most document types.
 
 ## Document Formats
 
@@ -43,18 +45,18 @@ Comprehensive list of file formats that can be indexed when linked from org file
 
 ## Audio Formats (ASR)
 
-| Format | Extensions | Notes |
-|--------|------------|-------|
-| **WAV** | `.wav` | Uncompressed audio |
-| **MP3** | `.mp3` | Compressed audio |
-| **M4A** | `.m4a` | Apple audio format |
-| **OGG** | `.ogg` | Open audio format |
+| Format | Extensions | Status | Notes |
+|--------|------------|--------|-------|
+| **WAV** | `.wav` | ⚠️ SKIPPED | Causes multiprocessing leaks |
+| **MP3** | `.mp3` | ⚠️ SKIPPED | Causes multiprocessing leaks |
+| **M4A** | `.m4a` | ⚠️ SKIPPED | Causes multiprocessing leaks |
+| **OGG** | `.ogg` | ⚠️ SKIPPED | Causes multiprocessing leaks |
 
-**ASR Features**:
-- Automatic Speech Recognition
-- Transcription to text
-- **Note**: ASR is slow and resource-intensive
-- Disabled by default (`org-db-v3-index-audio-files`)
+**ASR Status**:
+- ⚠️ **Disabled by default** due to markitdown multiprocessing resource leaks
+- Markitdown's speech recognition creates semaphore leaks that accumulate during directory indexing
+- **Workaround**: Process audio files separately or enable with `DocumentConverter(skip_audio=False)`
+- To re-enable: Modify `document_converter.py` and set `skip_audio=False`
 
 ## Specialized Formats
 
@@ -230,8 +232,23 @@ Formats **NOT** supported by docling:
 | JPEG | `photo-with-text.jpg` | ~3 | OCR test |
 | MD | `notes.md` | ~5 | Already markdown |
 
+## Conversion Libraries
+
+### Current Implementation (Stable)
+- **pymupdf4llm**: PDF conversion (fast, reliable)
+- **python-docx**: DOCX conversion
+- **python-pptx**: PPTX conversion
+- **markitdown**: Fallback for HTML, Excel, images, etc.
+
+### Previous Implementation (Removed)
+- ~~**Docling**~~ - Removed due to frequent segmentation faults
+  - Issue: Caused server crashes during directory indexing
+  - Impact: Unreliable for production use
+  - Decision: Replaced with specialized libraries (October 2025)
+
 ## References
 
-- [Docling Documentation](https://docling-project.github.io/docling/)
-- [Docling GitHub](https://github.com/docling-project/docling)
-- [Supported Formats](https://docling-project.github.io/docling/usage/supported_formats/)
+- [MarkItDown GitHub](https://github.com/microsoft/markitdown)
+- [PyMuPDF4LLM Documentation](https://pymupdf.readthedocs.io/)
+- [python-docx Documentation](https://python-docx.readthedocs.io/)
+- [python-pptx Documentation](https://python-pptx.readthedocs.io/)

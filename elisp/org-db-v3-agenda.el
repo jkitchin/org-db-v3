@@ -109,7 +109,9 @@ BEFORE-DATE is a date string like \"+2w\", \"+1m\", or \"2025-12-31\"."
                         ((string= priority "A") '(:foreground "red1" :weight bold))
                         (scheduled '(:foreground "DarkOrange3"))
                         ((and deadline
-                              (org-time< deadline (format-time-string "<%Y-%m-%d %a>")))
+                              ;; Compare dates using string comparison (YYYY-MM-DD format)
+                              (string< (substring deadline 0 10)
+                                      (format-time-string "%Y-%m-%d")))
                          '(:foreground "dark red"))
                         (t '(:foreground "green4"))))
                  (candidate-with-face (propertize candidate 'face face)))

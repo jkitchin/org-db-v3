@@ -177,7 +177,7 @@ class Database:
             file_type: File extension/type (pdf, docx, etc)
             file_size: Size of the linked file in bytes
             md5: MD5 hash of the linked file
-            conversion_status: Status of docling conversion (pending, success, error, skipped)
+            conversion_status: Status of document conversion (pending, success, error, skipped)
             conversion_error: Error message if conversion failed
 
         Returns:

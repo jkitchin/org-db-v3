@@ -162,7 +162,9 @@ Returns plist with :filename_pattern and/or :keyword."
     ("L" "View server logs" org-db-v3-view-logs
      :description "Open server log buffer")
     ("W" "Open web interface" org-db-v3-open-web-interface
-     :description "Open server homepage in browser")]])
+     :description "Open server homepage in browser")
+    ("X" "Clear database" org-db-v3-clear-database
+     :description "Delete entire database (destructive!)")]])
 
 ;;;###autoload
 (defun org-db-v3-update-current-file ()

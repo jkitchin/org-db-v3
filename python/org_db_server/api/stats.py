@@ -1,9 +1,13 @@
 """Statistics API endpoints."""
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
+import os
+import logging
 
 from org_db_server.services.database import Database
 from org_db_server.config import settings
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
@@ -95,3 +99,40 @@ async def get_files():
     ]
 
     return {"files": files, "count": len(files)}
+
+@router.delete("/clear-database", response_model=Dict[str, Any])
+async def clear_database():
+    """Clear the entire database by removing the database file.
+
+    WARNING: This is destructive and cannot be undone!
+    All indexed data will be permanently deleted.
+    """
+    global db
+
+    db_path = settings.db_path
+
+    if not db_path.exists():
+        raise HTTPException(status_code=404, detail="Database file does not exist")
+
+    try:
+        # Close the database connection first
+        db.conn.close()
+        logger.info(f"Closed database connection for {db_path}")
+
+        # Delete the database file
+        os.remove(db_path)
+        logger.info(f"Deleted database file: {db_path}")
+
+        # Reinitialize the database with a fresh connection
+        db = Database(db_path)
+        logger.info(f"Reinitialized empty database at {db_path}")
+
+        return {
+            "status": "success",
+            "message": "Database cleared successfully",
+            "db_path": str(db_path)
+        }
+
+    except Exception as e:
+        logger.error(f"Error clearing database: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear database: {str(e)}")

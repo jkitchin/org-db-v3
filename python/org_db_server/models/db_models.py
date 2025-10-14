@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS timestamps (
     FOREIGN KEY(filename_id) REFERENCES files(rowid) ON DELETE CASCADE
 );
 
--- Linked files table (for indexing linked documents via docling)
+-- Linked files table (for indexing linked documents: PDFs, DOCX, PPTX, etc.)
 CREATE TABLE IF NOT EXISTS linked_files (
     rowid INTEGER PRIMARY KEY,
     org_file_id INTEGER NOT NULL,
