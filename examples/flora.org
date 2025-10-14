@@ -1,0 +1,230 @@
+#+TITLE: Plant Kingdom
+#+AUTHOR: Example Database
+#+DATE: 2025-10-13
+
+* Mushrooms
+
+Fungi represent a distinct kingdom of life, neither plant nor animal. They play essential roles in decomposition and nutrient cycling.
+
+** Edible Mushrooms
+
+*** Button Mushrooms
+
+White button mushrooms (Agaricus bisporus) are the most widely cultivated mushrooms globally. When allowed to mature, they develop into cremini and eventually portobello mushrooms.
+
+**** Nutritional Value
+
+Button mushrooms are low in calories but rich in B vitamins, selenium, and copper. They are one of the few non-animal sources of vitamin D, especially when exposed to UV light.
+
+**** Culinary Uses
+
+Their mild flavor makes them versatile in cooking. They can be eaten raw in salads, sautéed, grilled, or added to soups and stews.
+
+*** Shiitake
+
+Native to East Asia, shiitake mushrooms have been cultivated for over 1,000 years. They possess a rich, umami flavor and meaty texture.
+
+**** Health Benefits
+
+Shiitake contain lentinan, a polysaccharide that may boost immune function. They also provide all eight essential amino acids.
+
+*** Oyster Mushrooms
+
+These fan-shaped mushrooms grow in shelf-like clusters on dead or dying trees. They come in various colors including white, gray, pink, and yellow.
+
+** Medicinal Mushrooms
+
+*** Reishi
+
+Known as the "mushroom of immortality" in traditional Chinese medicine, reishi (Ganoderma lucidum) has been used for over 2,000 years. It has a woody texture unsuitable for cooking but is consumed as tea or extract.
+
+*** Lion's Mane
+
+This distinctive mushroom resembles a white pom-pom and may support brain health and cognitive function. It stimulates nerve growth factor production.
+
+** Poisonous Mushrooms
+
+*** Death Cap
+
+Amanita phalloides is responsible for most fatal mushroom poisonings worldwide. It contains amatoxins that destroy liver and kidney cells.
+
+*** Destroying Angel
+
+Members of the Amanita genus, destroying angels are pure white and deadly toxic. They often grow near oak trees in late summer and fall.
+
+* Vegetables
+
+Vegetables provide essential vitamins, minerals, and fiber in the human diet.
+
+** Root Vegetables
+
+*** Carrots
+
+Carrots were originally purple, white, or yellow. The orange variety was developed in the Netherlands in the 17th century. They are exceptionally rich in beta-carotene.
+
+**** Growing Conditions
+
+Carrots prefer loose, sandy soil free of rocks. They require consistent moisture but can tolerate some drought once established.
+
+**** Varieties
+
+- Nantes: cylindrical with rounded tips
+- Chantenay: short and thick, good for heavy soils
+- Imperator: long and tapered, common in stores
+- Baby carrots: not immature carrots but cut and shaped from regular carrots
+
+*** Potatoes
+
+Potatoes originated in the Andes mountains of South America. They are the world's fourth-largest food crop after rice, wheat, and corn.
+
+**** Types and Uses
+
+Russet potatoes are ideal for baking and frying. Yukon Golds have buttery flavor perfect for mashing. Red potatoes hold their shape well in salads and roasting.
+
+*** Beets
+
+Beets contain betalains, pigments responsible for their deep red color and potential health benefits. Both the roots and greens are edible and nutritious.
+
+** Cruciferous Vegetables
+
+*** Broccoli
+
+Broccoli is rich in sulforaphane, a compound with potential anti-cancer properties. The florets, stems, and leaves are all edible.
+
+**** Preparation Methods
+
+Steaming preserves more nutrients than boiling. Roasting intensifies flavor and creates crispy edges. Raw broccoli can be added to salads.
+
+*** Cauliflower
+
+This versatile vegetable can be white, purple, orange, or green. It serves as a low-carb substitute for rice, pizza crust, and mashed potatoes.
+
+*** Brussels Sprouts
+
+These miniature cabbage-like vegetables grow on tall stalks. Roasting caramelizes their sugars, reducing bitterness and creating nutty sweetness.
+
+** Leafy Greens
+
+*** Spinach
+
+Popeye's favorite vegetable is loaded with iron, though not as much as once believed due to a decimal point error in early research. It also contains oxalates that can inhibit mineral absorption.
+
+*** Kale
+
+This superfood contains vitamins A, K, and C, plus antioxidants. Lacinato (dinosaur) kale has a sweeter, more tender texture than curly varieties.
+
+*** Swiss Chard
+
+Related to beets, chard produces large leaves with colorful stems ranging from white to red to rainbow varieties. It tolerates heat better than most greens.
+
+* Grains
+
+Grains are the seeds of grass plants and form the foundation of human agriculture.
+
+** Cereals
+
+*** Wheat
+
+Wheat is the most widely grown crop for human consumption. It contains gluten proteins that give bread its structure and chewiness.
+
+**** Types of Wheat
+
+- Hard red winter: high protein, used for bread
+- Soft white: low protein, used for pastries
+- Durum: highest protein, used for pasta
+- Spelt: ancient variety gaining popularity
+
+*** Rice
+
+Rice feeds more than half the world's population. It grows in flooded paddies that suppress weeds and provide nutrients through decomposing organic matter.
+
+**** Varieties
+
+- Long-grain: fluffy and separate when cooked
+- Medium-grain: slightly sticky, used in risotto
+- Short-grain: very sticky, used for sushi
+- Wild rice: technically a grass seed, not true rice
+
+*** Oats
+
+Oats are unique among grains for their high soluble fiber content, particularly beta-glucan, which helps lower cholesterol. They are processed into various forms.
+
+**** Oat Processing
+
+- Steel-cut: chopped groats, chewy texture
+- Rolled: steamed and flattened, quick-cooking
+- Instant: pre-cooked and dried, fastest preparation
+
+** Pseudocereals
+
+*** Quinoa
+
+This ancient seed from the Andes is a complete protein containing all nine essential amino acids. It was sacred to the Inca civilization.
+
+*** Amaranth
+
+Amaranth seeds are tiny but nutritionally dense. The plant was a staple of Aztec cuisine and featured in religious ceremonies.
+
+*** Buckwheat
+
+Despite its name, buckwheat is not related to wheat and is gluten-free. It is used to make soba noodles in Japan and blini in Russia.
+
+* Flowers
+
+Flowering plants dominate terrestrial ecosystems with over 300,000 species.
+
+** Garden Flowers
+
+*** Roses
+
+Roses have been cultivated for over 5,000 years. They belong to the Rosaceae family, which also includes apples, strawberries, and almonds.
+
+**** Rose Types
+
+- Hybrid tea: classic long-stemmed roses
+- Floribunda: clusters of blooms
+- Climbing: vigorous growth for trellises
+- Shrub: hardy and disease-resistant
+
+*** Tulips
+
+Tulips triggered "tulip mania" in 17th century Holland, the first recorded speculative bubble. Some bulbs sold for more than houses.
+
+**** Color Meanings
+
+- Red: true love
+- Yellow: cheerful thoughts
+- Purple: royalty
+- White: forgiveness and purity
+
+*** Sunflowers
+
+These towering plants track the sun across the sky through a process called heliotropism. Their seeds provide oil and food for humans and wildlife.
+
+** Wildflowers
+
+*** Poppies
+
+California poppies are the state flower of California. Opium poppies produce latex used for medicinal and recreational drugs, but are illegal to grow in many countries.
+
+*** Daisies
+
+The common daisy is actually a composite of many tiny flowers. The white "petals" are individual ray flowers, while the yellow center contains disc flowers.
+
+*** Lupines
+
+These nitrogen-fixing plants improve soil quality. Russell lupines create spectacular displays in gardens with their tall, colorful spikes.
+
+** Flowering Trees
+
+*** Cherry Blossoms
+
+Japanese cherry blossoms (sakura) symbolize the ephemeral nature of life. Their brief blooming period is celebrated with hanami viewing parties.
+
+*** Magnolias
+
+Magnolias are among the most ancient flowering plants, with fossils dating back 100 million years. They evolved before bees, relying on beetles for pollination.
+
+*** Dogwoods
+
+Dogwood "petals" are actually modified leaves called bracts. The true flowers are the small cluster in the center.

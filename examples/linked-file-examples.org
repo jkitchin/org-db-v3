@@ -1,0 +1,7 @@
+#+title: Examples of linked files that should be indexed
+
+You should be able to find these
+
+- [[./water-splitting.pptx]]  [[elisp:(org-db-v3-semantic-search "water splitting")]]
+
+- [[./emacs-orgmode.pdf]]  [[elisp:(org-db-v3-semantic-search "electronic lab notebook in emacs and org-mode")]]

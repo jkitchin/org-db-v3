@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pathlib import Path
 
-from org_db_server.api import indexing, search, stats, agenda
+from org_db_server.api import indexing, search, stats, agenda, linked_files
 from org_db_server.log_handler import get_memory_handler
 
 # Set up logging
@@ -34,6 +34,7 @@ app.include_router(indexing.router)
 app.include_router(search.router)
 app.include_router(stats.router)
 app.include_router(agenda.router)
+app.include_router(linked_files.router)
 
 @app.get("/health")
 async def health_check():

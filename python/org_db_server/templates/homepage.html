@@ -477,8 +477,13 @@
                 const statsGrid = document.getElementById('stats-grid');
                 statsGrid.innerHTML = `
                     <div class="stat-card">
-                        <h3>Files Indexed</h3>
-                        <div class="value">${stats.files_count}</div>
+                        <h3>Org Files Indexed</h3>
+                        <div class="value">${stats.org_files_count}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Other Files Indexed</h3>
+                        <div class="value">${stats.linked_files_count}</div>
+                        <p style="font-size: 0.75em; color: #6b7280; margin-top: 5px;">PDF, DOCX, etc.</p>
                     </div>
                     <div class="stat-card">
                         <h3>Headlines</h3>

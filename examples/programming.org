@@ -1,0 +1,669 @@
+#+TITLE: Programming Languages
+#+AUTHOR: Example Database
+#+DATE: 2025-10-13
+
+* Python
+
+Python is a high-level, interpreted programming language known for its readable syntax and extensive ecosystem.
+
+** History and Philosophy
+
+*** Origins
+
+Created by Guido van Rossum and first released in 1991, Python was designed to emphasize code readability. The name was inspired by Monty Python's Flying Circus, not the snake.
+
+*** The Zen of Python
+
+Python's design philosophy is summarized in "The Zen of Python" (PEP 20):
+- Beautiful is better than ugly
+- Explicit is better than implicit
+- Simple is better than complex
+- Readability counts
+
+** Core Language Features
+
+*** Dynamic Typing
+
+Python uses dynamic typing, determining variable types at runtime rather than compile time. This provides flexibility but requires careful attention to type-related bugs.
+
+#+BEGIN_SRC python
+# Variables don't need type declarations
+x = 42           # integer
+x = "hello"      # now a string
+x = [1, 2, 3]    # now a list
+#+END_SRC
+
+*** List Comprehensions
+
+List comprehensions provide concise syntax for creating lists based on existing sequences.
+
+#+BEGIN_SRC python
+# Traditional approach
+squares = []
+for i in range(10):
+    squares.append(i ** 2)
+
+# List comprehension
+squares = [i ** 2 for i in range(10)]
+
+# With condition
+even_squares = [i ** 2 for i in range(10) if i % 2 == 0]
+#+END_SRC
+
+*** Decorators
+
+Decorators are a powerful metaprogramming feature that allows modifying function or class behavior.
+
+#+BEGIN_SRC python
+def timing_decorator(func):
+    """Measure function execution time."""
+    import time
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f"{func.__name__} took {end - start:.4f} seconds")
+        return result
+    return wrapper
+
+@timing_decorator
+def slow_function():
+    time.sleep(1)
+    return "Done"
+#+END_SRC
+
+** Popular Libraries and Frameworks
+
+*** NumPy
+
+NumPy provides efficient multi-dimensional array operations and mathematical functions. It forms the foundation of scientific Python.
+
+#+BEGIN_SRC python
+import numpy as np
+
+# Create arrays
+arr = np.array([1, 2, 3, 4, 5])
+matrix = np.array([[1, 2], [3, 4]])
+
+# Vectorized operations
+squared = arr ** 2
+normalized = (arr - arr.mean()) / arr.std()
+
+# Linear algebra
+eigenvalues, eigenvectors = np.linalg.eig(matrix)
+#+END_SRC
+
+*** Pandas
+
+Pandas offers powerful data manipulation and analysis tools, centered around the DataFrame object.
+
+#+BEGIN_SRC python
+import pandas as pd
+
+# Create DataFrame
+df = pd.DataFrame({
+    'name': ['Alice', 'Bob', 'Charlie'],
+    'age': [25, 30, 35],
+    'city': ['NYC', 'LA', 'Chicago']
+})
+
+# Data manipulation
+adults = df[df['age'] >= 30]
+grouped = df.groupby('city').mean()
+#+END_SRC
+
+*** Django and Flask
+
+Django is a high-level web framework promoting rapid development. Flask is a lightweight microframework offering more flexibility.
+
+**** Django Example
+
+#+BEGIN_SRC python
+# Django model
+from django.db import models
+
+class Article(models.Model):
+    title = models.CharField(max_length=200)
+    content = models.TextField()
+    published_date = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.title
+#+END_SRC
+
+**** Flask Example
+
+#+BEGIN_SRC python
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/api/hello/<name>')
+def hello(name):
+    return jsonify({'message': f'Hello, {name}!'})
+
+if __name__ == '__main__':
+    app.run(debug=True)
+#+END_SRC
+
+** Object-Oriented Programming
+
+*** Classes and Inheritance
+
+Python supports multiple inheritance and provides special methods for operator overloading.
+
+#+BEGIN_SRC python
+class Animal:
+    def __init__(self, name):
+        self.name = name
+
+    def speak(self):
+        raise NotImplementedError("Subclass must implement")
+
+class Dog(Animal):
+    def speak(self):
+        return f"{self.name} says Woof!"
+
+class Cat(Animal):
+    def speak(self):
+        return f"{self.name} says Meow!"
+
+# Usage
+dog = Dog("Buddy")
+cat = Cat("Whiskers")
+print(dog.speak())  # Buddy says Woof!
+print(cat.speak())  # Whiskers says Meow!
+#+END_SRC
+
+*** Properties and Descriptors
+
+Properties provide controlled access to attributes with getter, setter, and deleter methods.
+
+#+BEGIN_SRC python
+class Temperature:
+    def __init__(self, celsius=0):
+        self._celsius = celsius
+
+    @property
+    def celsius(self):
+        return self._celsius
+
+    @celsius.setter
+    def celsius(self, value):
+        if value < -273.15:
+            raise ValueError("Temperature below absolute zero")
+        self._celsius = value
+
+    @property
+    def fahrenheit(self):
+        return self._celsius * 9/5 + 32
+#+END_SRC
+
+* Emacs Lisp
+
+Emacs Lisp (Elisp) is the dialect of Lisp used to extend and customize the Emacs text editor.
+
+** Lisp Fundamentals
+
+*** S-expressions
+
+Everything in Lisp is an S-expression (symbolic expression). Code and data share the same representation.
+
+#+BEGIN_SRC emacs-lisp
+;; Simple expressions
+42
+"hello"
+'symbol
+
+;; Lists (function calls)
+(+ 1 2 3)  ; Addition: 6
+(message "Hello, %s" "World")  ; Print message
+
+;; Nested expressions
+(* (+ 2 3) (- 10 4))  ; (2+3) * (10-4) = 30
+#+END_SRC
+
+*** Variables and Bindings
+
+Elisp uses dynamic scoping by default but supports lexical scoping with a file header.
+
+#+BEGIN_SRC emacs-lisp
+;; Global variables
+(defvar my-variable 42
+  "Documentation string for my-variable.")
+
+(setq another-var "hello")
+
+;; Local bindings
+(let ((x 10)
+      (y 20))
+  (+ x y))  ; Returns 30
+
+;; Sequential bindings
+(let* ((x 10)
+       (y (* x 2)))
+  y)  ; Returns 20
+#+END_SRC
+
+** Functions and Control Flow
+
+*** Defining Functions
+
+#+BEGIN_SRC emacs-lisp
+;; Basic function
+(defun greet (name)
+  "Greet NAME with a friendly message."
+  (message "Hello, %s!" name))
+
+;; Function with optional arguments
+(defun greet-with-title (&optional title name)
+  "Greet NAME with TITLE."
+  (let ((greeting (if title
+                      (format "%s %s" title name)
+                    name)))
+    (message "Hello, %s!" greeting)))
+
+;; Function with rest arguments
+(defun sum (&rest numbers)
+  "Sum all NUMBERS."
+  (apply #'+ numbers))
+#+END_SRC
+
+*** Conditionals and Iteration
+
+#+BEGIN_SRC emacs-lisp
+;; If statements
+(if (> 10 5)
+    (message "Greater")
+  (message "Less or equal"))
+
+;; Cond for multiple conditions
+(cond
+ ((< x 0) "negative")
+ ((= x 0) "zero")
+ (t "positive"))
+
+;; While loop
+(let ((i 0))
+  (while (< i 5)
+    (message "Count: %d" i)
+    (setq i (1+ i))))
+
+;; Dolist
+(dolist (item '(apple banana orange))
+  (message "Fruit: %s" item))
+#+END_SRC
+
+** Buffer Manipulation
+
+*** Working with Buffers
+
+#+BEGIN_SRC emacs-lisp
+;; Get current buffer
+(current-buffer)
+
+;; Switch buffers
+(with-current-buffer "*scratch*"
+  (insert "Hello from scratch buffer"))
+
+;; Create new buffer
+(with-temp-buffer
+  (insert "Temporary content")
+  (buffer-string))
+
+;; Save excursion (preserve point position)
+(save-excursion
+  (goto-char (point-min))
+  (insert "At beginning"))
+#+END_SRC
+
+*** Text Manipulation
+
+#+BEGIN_SRC emacs-lisp
+;; Insert text
+(insert "Hello, World!\n")
+
+;; Delete region
+(delete-region (point-min) (point-max))
+
+;; Replace text
+(goto-char (point-min))
+(while (re-search-forward "old" nil t)
+  (replace-match "new"))
+
+;; Get text
+(buffer-substring-no-properties (point-min) (point-max))
+#+END_SRC
+
+** Interactive Commands
+
+*** Creating Commands
+
+#+BEGIN_SRC emacs-lisp
+(defun my-insert-date ()
+  "Insert current date at point."
+  (interactive)
+  (insert (format-time-string "%Y-%m-%d")))
+
+(defun my-count-words (start end)
+  "Count words in region from START to END."
+  (interactive "r")
+  (let ((count (how-many "\\w+" start end)))
+    (message "Word count: %d" count)))
+
+;; Bind to key
+(global-set-key (kbd "C-c d") #'my-insert-date)
+#+END_SRC
+
+** Package Development
+
+*** Package Headers
+
+#+BEGIN_SRC emacs-lisp
+;;; my-package.el --- Description of package -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2025 Author Name
+
+;; Author: Author Name <email@example.com>
+;; Version: 1.0.0
+;; Package-Requires: ((emacs "27.1"))
+;; Keywords: convenience, tools
+;; URL: https://github.com/user/my-package
+
+;;; Commentary:
+
+;; This package provides useful functionality for...
+
+;;; Code:
+
+(require 'some-dependency)
+
+(defgroup my-package nil
+  "Customization group for my-package."
+  :group 'convenience)
+
+(defcustom my-package-option t
+  "Option for my-package."
+  :type 'boolean
+  :group 'my-package)
+
+(provide 'my-package)
+;;; my-package.el ends here
+#+END_SRC
+
+* Fortran
+
+Fortran (FORmula TRANslation) is one of the oldest high-level programming languages, designed for scientific and engineering calculations.
+
+** Historical Context
+
+*** Evolution of Fortran
+
+Created by IBM in the 1950s, Fortran was the first widely used high-level programming language. It revolutionized scientific computing by allowing programmers to write mathematical formulas in a more natural notation.
+
+Major versions:
+- FORTRAN I-IV (1954-1962): Original versions
+- FORTRAN 66: First standardized version
+- FORTRAN 77: Added structured programming features
+- Fortran 90/95: Major modernization, free-form source
+- Fortran 2003/2008/2018: Object-oriented features, interoperability
+
+** Basic Syntax
+
+*** Program Structure
+
+#+BEGIN_SRC fortran
+program hello_world
+    implicit none
+
+    print *, "Hello, World!"
+
+end program hello_world
+#+END_SRC
+
+*** Variables and Types
+
+#+BEGIN_SRC fortran
+program variables_demo
+    implicit none
+
+    ! Variable declarations
+    integer :: i, j, k
+    real :: x, y
+    double precision :: z
+    complex :: c
+    logical :: flag
+    character(len=50) :: name
+
+    ! Array declarations
+    integer, dimension(10) :: arr
+    real, dimension(3,3) :: matrix
+
+    ! Initialization
+    i = 42
+    x = 3.14159
+    flag = .true.
+    name = "Fortran"
+
+end program variables_demo
+#+END_SRC
+
+** Array Operations
+
+*** Array Syntax
+
+Fortran excels at array operations with built-in support for whole-array operations.
+
+#+BEGIN_SRC fortran
+program array_operations
+    implicit none
+
+    integer, parameter :: n = 100
+    real, dimension(n) :: a, b, c
+    integer :: i
+
+    ! Initialize arrays
+    do i = 1, n
+        a(i) = real(i)
+        b(i) = real(i) * 2.0
+    end do
+
+    ! Whole array operations
+    c = a + b                ! Element-wise addition
+    c = a * b                ! Element-wise multiplication
+    c = sqrt(a)              ! Element-wise function
+
+    ! Array sections
+    c(1:50) = a(51:100)      ! Copy second half to first half
+
+    ! Array intrinsics
+    print *, "Sum:", sum(a)
+    print *, "Max:", maxval(a)
+    print *, "Mean:", sum(a) / real(n)
+
+end program array_operations
+#+END_SRC
+
+** Subroutines and Functions
+
+*** Function Definition
+
+#+BEGIN_SRC fortran
+! Pure function (no side effects)
+pure function factorial(n) result(fact)
+    implicit none
+    integer, intent(in) :: n
+    integer :: fact
+    integer :: i
+
+    fact = 1
+    do i = 2, n
+        fact = fact * i
+    end do
+
+end function factorial
+
+! Subroutine with multiple outputs
+subroutine solve_quadratic(a, b, c, x1, x2, has_real_roots)
+    implicit none
+    real, intent(in) :: a, b, c
+    real, intent(out) :: x1, x2
+    logical, intent(out) :: has_real_roots
+    real :: discriminant
+
+    discriminant = b**2 - 4.0*a*c
+
+    if (discriminant >= 0.0) then
+        has_real_roots = .true.
+        x1 = (-b + sqrt(discriminant)) / (2.0*a)
+        x2 = (-b - sqrt(discriminant)) / (2.0*a)
+    else
+        has_real_roots = .false.
+    end if
+
+end subroutine solve_quadratic
+#+END_SRC
+
+** Modern Features
+
+*** Modules and Derived Types
+
+#+BEGIN_SRC fortran
+module geometry
+    implicit none
+
+    ! Derived type (like struct or class)
+    type :: point
+        real :: x, y, z
+    end type point
+
+    type :: circle
+        type(point) :: center
+        real :: radius
+    end type circle
+
+contains
+
+    function distance(p1, p2) result(dist)
+        type(point), intent(in) :: p1, p2
+        real :: dist
+
+        dist = sqrt((p2%x - p1%x)**2 + &
+                   (p2%y - p1%y)**2 + &
+                   (p2%z - p1%z)**2)
+    end function distance
+
+    function circle_area(c) result(area)
+        type(circle), intent(in) :: c
+        real :: area
+        real, parameter :: pi = 3.14159265
+
+        area = pi * c%radius**2
+    end function circle_area
+
+end module geometry
+#+END_SRC
+
+** Numerical Computing
+
+*** Matrix Operations
+
+#+BEGIN_SRC fortran
+program matrix_multiply
+    implicit none
+
+    integer, parameter :: n = 1000
+    real, dimension(n,n) :: A, B, C
+    integer :: i, j, k
+    real :: start_time, end_time
+
+    ! Initialize matrices
+    call random_number(A)
+    call random_number(B)
+
+    ! Matrix multiplication
+    call cpu_time(start_time)
+
+    C = 0.0
+    do i = 1, n
+        do j = 1, n
+            do k = 1, n
+                C(i,j) = C(i,j) + A(i,k) * B(k,j)
+            end do
+        end do
+    end do
+
+    call cpu_time(end_time)
+
+    print *, "Time:", end_time - start_time, "seconds"
+
+end program matrix_multiply
+#+END_SRC
+
+*** BLAS and LAPACK Integration
+
+Fortran interfaces seamlessly with highly optimized numerical libraries.
+
+#+BEGIN_SRC fortran
+program linear_solve
+    implicit none
+
+    integer, parameter :: n = 3
+    real, dimension(n,n) :: A
+    real, dimension(n) :: b, x
+    integer :: ipiv(n), info
+
+    ! Define system Ax = b
+    A = reshape([2.0, 1.0, 1.0, &
+                 1.0, 3.0, 2.0, &
+                 1.0, 2.0, 2.0], [n,n])
+    b = [4.0, 5.0, 6.0]
+
+    ! Solve using LAPACK
+    call sgesv(n, 1, A, n, ipiv, b, n, info)
+
+    if (info == 0) then
+        print *, "Solution:", b
+    else
+        print *, "Error solving system"
+    end if
+
+end program linear_solve
+#+END_SRC
+
+** High-Performance Computing
+
+*** OpenMP Parallelization
+
+#+BEGIN_SRC fortran
+program parallel_sum
+    use omp_lib
+    implicit none
+
+    integer, parameter :: n = 100000000
+    real, dimension(n) :: array
+    real :: sum_val
+    integer :: i
+    double precision :: start_time, end_time
+
+    ! Initialize array
+    do i = 1, n
+        array(i) = real(i)
+    end do
+
+    start_time = omp_get_wtime()
+
+    sum_val = 0.0
+    !$omp parallel do reduction(+:sum_val)
+    do i = 1, n
+        sum_val = sum_val + array(i)
+    end do
+    !$omp end parallel do
+
+    end_time = omp_get_wtime()
+
+    print *, "Sum:", sum_val
+    print *, "Time:", end_time - start_time
+
+end program parallel_sum
+#+END_SRC

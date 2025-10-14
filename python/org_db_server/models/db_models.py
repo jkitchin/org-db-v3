@@ -181,6 +181,26 @@ CREATE TABLE IF NOT EXISTS timestamps (
     FOREIGN KEY(filename_id) REFERENCES files(rowid) ON DELETE CASCADE
 );
 
+-- Linked files table (for indexing linked documents via docling)
+CREATE TABLE IF NOT EXISTS linked_files (
+    rowid INTEGER PRIMARY KEY,
+    org_file_id INTEGER NOT NULL,
+    org_link_line INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    file_size INTEGER,
+    md5 TEXT NOT NULL,
+    last_converted TEXT,
+    conversion_status TEXT NOT NULL DEFAULT 'pending',
+    conversion_error TEXT,
+    indexed_at TEXT,
+    FOREIGN KEY(org_file_id) REFERENCES files(rowid) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_linked_files_org_file ON linked_files(org_file_id);
+CREATE INDEX IF NOT EXISTS idx_linked_files_path ON linked_files(file_path);
+CREATE INDEX IF NOT EXISTS idx_linked_files_md5 ON linked_files(md5);
+
 -- Chunks table for semantic search
 CREATE TABLE IF NOT EXISTS chunks (
     rowid INTEGER PRIMARY KEY,
@@ -191,12 +211,15 @@ CREATE TABLE IF NOT EXISTS chunks (
     begin_line INTEGER NOT NULL,
     end_line INTEGER NOT NULL,
     char_offset INTEGER,
+    linked_file_id INTEGER,
     FOREIGN KEY(filename_id) REFERENCES files(rowid) ON DELETE CASCADE,
-    FOREIGN KEY(headline_id) REFERENCES headlines(rowid) ON DELETE CASCADE
+    FOREIGN KEY(headline_id) REFERENCES headlines(rowid) ON DELETE CASCADE,
+    FOREIGN KEY(linked_file_id) REFERENCES linked_files(rowid) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_filename ON chunks(filename_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_headline ON chunks(headline_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_linked_file ON chunks(linked_file_id);
 
 -- Embeddings table
 CREATE TABLE IF NOT EXISTS embeddings (
