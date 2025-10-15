@@ -25,7 +25,7 @@ db = Database(settings.db_path)
 
 @router.post("/semantic", response_model=SemanticSearchResponse)
 async def semantic_search(request: SemanticSearchRequest):
-    """Perform semantic search using embeddings."""
+    """Perform semantic search using embeddings with fast vector_top_k()."""
     try:
         # Get embedding service
         model_name = request.model or "all-MiniLM-L6-v2"
@@ -34,49 +34,92 @@ async def semantic_search(request: SemanticSearchRequest):
         # Generate query embedding
         query_embedding = embedding_service.generate_embedding(request.query)
 
-        # Fetch all stored embeddings from database
+        # Convert query embedding to bytes for libsql
+        query_bytes = query_embedding.astype(np.float32).tobytes()
+
         cursor = db.conn.cursor()
 
+        # Determine how many candidates to retrieve for reranking
+        num_candidates = request.rerank_candidates if request.rerank else request.limit
+
+        # Use vector_top_k() for fast approximate nearest neighbor search
         # Build query with optional filters
-        base_query = """
-            SELECT
-                e.rowid as chunk_id,
-                e.embedding_vector,
-                c.chunk_text,
-                c.chunk_type,
-                c.begin_line,
-                c.end_line,
-                f.filename,
-                lf.file_path as linked_file_path,
-                lf.file_type as linked_file_type
-            FROM embeddings e
-            JOIN chunks c ON e.chunk_id = c.rowid
-            JOIN files f ON c.filename_id = f.rowid
-            LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
-        """
-
-        params = [model_name]
-        where_clauses = ["e.embedding_model = ?"]
-
-        # Add filename pattern filter if provided
-        if request.filename_pattern:
-            where_clauses.append("f.filename LIKE ?")
-            params.append(request.filename_pattern)
-
-        # Add keyword filter if provided
-        if request.keyword:
-            base_query += """
-                JOIN file_keywords fk ON f.rowid = fk.filename_id
-                JOIN keywords k ON fk.keyword_id = k.rowid
+        if request.filename_pattern or request.keyword:
+            # With filters: join vector_top_k results with filtered files
+            filter_query = """
+                SELECT f.rowid FROM files f
+                WHERE 1=1
             """
-            where_clauses.append("k.keyword = ?")
-            params.append(request.keyword)
+            filter_params = []
 
-        # Combine WHERE clauses
-        base_query += " WHERE " + " AND ".join(where_clauses)
+            if request.filename_pattern:
+                filter_query += " AND f.filename LIKE ?"
+                filter_params.append(request.filename_pattern)
 
-        cursor.execute(base_query, params)
-        rows = cursor.fetchall()
+            if request.keyword:
+                filter_query += """
+                    AND EXISTS (
+                        SELECT 1 FROM file_keywords fk
+                        JOIN keywords k ON fk.keyword_id = k.rowid
+                        WHERE fk.filename_id = f.rowid AND k.keyword = ?
+                    )
+                """
+                filter_params.append(request.keyword)
+
+            # Get matching file IDs
+            cursor.execute(filter_query, filter_params)
+            matching_file_ids = {row[0] for row in cursor.fetchall()}
+
+            if not matching_file_ids:
+                return SemanticSearchResponse(
+                    results=[],
+                    query=request.query,
+                    model_used=model_name
+                )
+
+            # Get more candidates from vector search and filter
+            cursor.execute("""
+                SELECT
+                    vt.id as chunk_id,
+                    c.chunk_text,
+                    c.chunk_type,
+                    c.begin_line,
+                    c.end_line,
+                    f.filename,
+                    lf.file_path as linked_file_path,
+                    lf.file_type as linked_file_type,
+                    e.embedding_vector
+                FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                JOIN embeddings e ON e.rowid = vt.id
+                JOIN chunks c ON c.rowid = e.chunk_id
+                JOIN files f ON c.filename_id = f.rowid
+                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
+                WHERE e.embedding_model = ? AND f.rowid IN ({})
+            """.format(','.join('?' * len(matching_file_ids))),
+                [query_bytes, num_candidates * 3, model_name] + list(matching_file_ids)
+            )
+            rows = cursor.fetchall()[:num_candidates]
+        else:
+            # No filters: use vector_top_k directly
+            cursor.execute("""
+                SELECT
+                    vt.id as chunk_id,
+                    c.chunk_text,
+                    c.chunk_type,
+                    c.begin_line,
+                    c.end_line,
+                    f.filename,
+                    lf.file_path as linked_file_path,
+                    lf.file_type as linked_file_type,
+                    e.embedding_vector
+                FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                JOIN embeddings e ON e.rowid = vt.id
+                JOIN chunks c ON c.rowid = e.chunk_id
+                JOIN files f ON c.filename_id = f.rowid
+                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
+                WHERE e.embedding_model = ?
+            """, [query_bytes, num_candidates, model_name])
+            rows = cursor.fetchall()
 
         if not rows:
             return SemanticSearchResponse(
@@ -85,60 +128,47 @@ async def semantic_search(request: SemanticSearchRequest):
                 model_used=model_name
             )
 
-        # Calculate similarity scores
-        results_with_scores: List[Tuple[float, dict]] = []
+        # Build results from vector_top_k output
+        # vector_top_k returns results in order, but we need to calculate similarity
+        search_results = []
 
         for row in rows:
-            # Convert bytes back to numpy array
-            embedding_bytes = row[1]
-            stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+            chunk_id = row[0]
+            chunk_text = row[1]
+            chunk_type = row[2]
+            begin_line = row[3]
+            end_line = row[4]
+            filename = row[5]
+            linked_file_path = row[6]
+            linked_file_type = row[7]
+            embedding_bytes = row[8]
 
             # Calculate cosine similarity
-            similarity = embedding_service.similarity(query_embedding, stored_embedding)
+            stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+            similarity = float(embedding_service.similarity(query_embedding, stored_embedding))
 
             # Add file extension prefix for non-org files
-            chunk_text = row[2]
-            linked_file_path = row[7]
-            linked_file_type = row[8]
-
             if linked_file_path and linked_file_type:
-                # Extract extension from file type or path
                 ext = linked_file_type.upper() if linked_file_type else linked_file_path.split('.')[-1].upper()
                 chunk_text = f"[{ext}] {chunk_text}"
 
-            result_data = {
-                "chunk_id": row[0],
-                "chunk_text": chunk_text,
-                "chunk_type": row[3],
-                "begin_line": row[4],
-                "end_line": row[5],
-                "filename": row[6],
-                "similarity_score": float(similarity),
-                "linked_file_path": linked_file_path,
-                "linked_file_type": linked_file_type
-            }
-
-            results_with_scores.append((similarity, result_data))
-
-        # Sort by similarity (highest first)
-        results_with_scores.sort(key=lambda x: x[0], reverse=True)
-
-        # Determine how many candidates to retrieve
-        num_candidates = request.rerank_candidates if request.rerank else request.limit
-        top_results = results_with_scores[:num_candidates]
-
-        # Convert to SearchResult objects
-        search_results = [
-            SearchResult(**result_data)
-            for _, result_data in top_results
-        ]
+            search_results.append(SearchResult(
+                chunk_id=chunk_id,
+                chunk_text=chunk_text,
+                chunk_type=chunk_type,
+                begin_line=begin_line,
+                end_line=end_line,
+                filename=filename,
+                similarity_score=similarity,
+                linked_file_path=linked_file_path,
+                linked_file_type=linked_file_type
+            ))
 
         # Apply cross-encoder reranking if requested
         reranked = False
         if request.rerank and len(search_results) > 0:
             try:
                 reranker = get_reranker_service()
-                # Convert to dict format for reranking
                 result_dicts = [r.model_dump() for r in search_results]
                 reranked_dicts = reranker.rerank(
                     query=request.query,
@@ -150,9 +180,11 @@ async def semantic_search(request: SemanticSearchRequest):
                 search_results = [SearchResult(**d) for d in reranked_dicts]
                 reranked = True
             except Exception as e:
-                # Fall back to non-reranked results if reranking fails
                 logger.warning(f"Reranking failed, using original results: {e}")
                 search_results = search_results[:request.limit]
+        else:
+            # Just take top N results
+            search_results = search_results[:request.limit]
 
         return SemanticSearchResponse(
             results=search_results,
@@ -162,6 +194,7 @@ async def semantic_search(request: SemanticSearchRequest):
         )
 
     except Exception as e:
+        logger.error(f"Semantic search error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/fulltext", response_model=FulltextSearchResponse)
@@ -252,7 +285,7 @@ async def fulltext_search(request: FulltextSearchRequest):
 
 @router.post("/images", response_model=ImageSearchResponse)
 async def image_search(request: ImageSearchRequest):
-    """Perform image search using CLIP embeddings."""
+    """Perform image search using CLIP embeddings with fast vector_top_k()."""
     try:
         # Get CLIP service
         clip_service = get_clip_service()
@@ -260,43 +293,70 @@ async def image_search(request: ImageSearchRequest):
         # Generate text embedding for the query
         query_embedding = clip_service.generate_text_embedding(request.query)
 
-        # Fetch all stored image embeddings from database
+        # Convert query embedding to bytes for libsql
+        query_bytes = query_embedding.astype(np.float32).tobytes()
+
         cursor = db.conn.cursor()
 
-        # Build query with optional filters
-        base_query = """
-            SELECT
-                ie.image_id,
-                ie.embedding_vector,
-                i.image_path,
-                f.filename
-            FROM image_embeddings ie
-            JOIN images i ON ie.image_id = i.rowid
-            JOIN files f ON i.filename_id = f.rowid
-        """
+        # Use vector_top_k() for fast approximate nearest neighbor search
+        if request.filename_pattern or request.keyword:
+            # With filters: filter files first
+            filter_query = "SELECT f.rowid FROM files f WHERE 1=1"
+            filter_params = []
 
-        params = [clip_service.model_name]
-        where_clauses = ["ie.clip_model = ?"]
+            if request.filename_pattern:
+                filter_query += " AND f.filename LIKE ?"
+                filter_params.append(request.filename_pattern)
 
-        # Add filename pattern filter if provided
-        if request.filename_pattern:
-            where_clauses.append("f.filename LIKE ?")
-            params.append(request.filename_pattern)
+            if request.keyword:
+                filter_query += """
+                    AND EXISTS (
+                        SELECT 1 FROM file_keywords fk
+                        JOIN keywords k ON fk.keyword_id = k.rowid
+                        WHERE fk.filename_id = f.rowid AND k.keyword = ?
+                    )
+                """
+                filter_params.append(request.keyword)
 
-        # Add keyword filter if provided
-        if request.keyword:
-            base_query += """
-                JOIN file_keywords fk ON f.rowid = fk.filename_id
-                JOIN keywords k ON fk.keyword_id = k.rowid
-            """
-            where_clauses.append("k.keyword = ?")
-            params.append(request.keyword)
+            cursor.execute(filter_query, filter_params)
+            matching_file_ids = {row[0] for row in cursor.fetchall()}
 
-        # Combine WHERE clauses
-        base_query += " WHERE " + " AND ".join(where_clauses)
+            if not matching_file_ids:
+                return ImageSearchResponse(
+                    results=[],
+                    query=request.query,
+                    model_used=clip_service.model_name
+                )
 
-        cursor.execute(base_query, params)
-        rows = cursor.fetchall()
+            # Get results from vector search filtered by file IDs
+            cursor.execute("""
+                SELECT
+                    i.image_path,
+                    f.filename,
+                    ie.embedding_vector
+                FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
+                JOIN image_embeddings ie ON ie.rowid = vt.id
+                JOIN images i ON ie.image_id = i.rowid
+                JOIN files f ON i.filename_id = f.rowid
+                WHERE ie.clip_model = ? AND f.rowid IN ({})
+            """.format(','.join('?' * len(matching_file_ids))),
+                [query_bytes, request.limit * 2, clip_service.model_name] + list(matching_file_ids)
+            )
+            rows = cursor.fetchall()[:request.limit]
+        else:
+            # No filters: use vector_top_k directly
+            cursor.execute("""
+                SELECT
+                    i.image_path,
+                    f.filename,
+                    ie.embedding_vector
+                FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
+                JOIN image_embeddings ie ON ie.rowid = vt.id
+                JOIN images i ON ie.image_id = i.rowid
+                JOIN files f ON i.filename_id = f.rowid
+                WHERE ie.clip_model = ?
+            """, [query_bytes, request.limit, clip_service.model_name])
+            rows = cursor.fetchall()
 
         if not rows:
             return ImageSearchResponse(
@@ -305,34 +365,22 @@ async def image_search(request: ImageSearchRequest):
                 model_used=clip_service.model_name
             )
 
-        # Calculate similarity scores
-        results_with_scores: List[Tuple[float, dict]] = []
-
+        # Build results from vector_top_k output and calculate similarity
+        search_results = []
         for row in rows:
-            # Convert bytes back to numpy array
-            embedding_bytes = row[1]
-            stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+            image_path = row[0]
+            filename = row[1]
+            embedding_bytes = row[2]
 
             # Calculate cosine similarity
-            similarity = clip_service.similarity(query_embedding, stored_embedding)
+            stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+            similarity = float(clip_service.similarity(query_embedding, stored_embedding))
 
-            result_data = {
-                "image_path": row[2],
-                "filename": row[3],
-                "similarity_score": float(similarity)
-            }
-
-            results_with_scores.append((similarity, result_data))
-
-        # Sort by similarity (highest first) and take top N
-        results_with_scores.sort(key=lambda x: x[0], reverse=True)
-        top_results = results_with_scores[:request.limit]
-
-        # Convert to ImageSearchResult objects
-        search_results = [
-            ImageSearchResult(**result_data)
-            for _, result_data in top_results
-        ]
+            search_results.append(ImageSearchResult(
+                image_path=image_path,
+                filename=filename,
+                similarity_score=similarity
+            ))
 
         return ImageSearchResponse(
             results=search_results,
@@ -341,6 +389,7 @@ async def image_search(request: ImageSearchRequest):
         )
 
     except Exception as e:
+        logger.error(f"Image search error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/headlines", response_model=HeadlineSearchResponse)

@@ -1,12 +1,11 @@
 """Database migrations for org-db v3."""
-import sqlite3
 import logging
-from typing import List, Callable
+from typing import List, Callable, Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_schema_version(conn: sqlite3.Connection) -> int:
+def get_schema_version(conn: Any) -> int:
     """Get current schema version from database."""
     cursor = conn.cursor()
 
@@ -24,7 +23,7 @@ def get_schema_version(conn: sqlite3.Connection) -> int:
     return result[0] if result[0] is not None else 0
 
 
-def set_schema_version(conn: sqlite3.Connection, version: int):
+def set_schema_version(conn: Any, version: int):
     """Set schema version in database."""
     from datetime import datetime
     cursor = conn.cursor()
@@ -35,7 +34,7 @@ def set_schema_version(conn: sqlite3.Connection, version: int):
     conn.commit()
 
 
-def migration_001_add_linked_files(conn: sqlite3.Connection):
+def migration_001_add_linked_files(conn: Any):
     """Migration 001: Add linked_file_id column to chunks table.
 
     This migration adds support for indexing linked files (PDF, DOCX, etc.)
@@ -65,13 +64,16 @@ def migration_001_add_linked_files(conn: sqlite3.Connection):
         logger.info("Migration 001 skipped: linked_file_id column already exists")
 
 
+# Note: Migration 002 (vector indexes) is now part of the base schema in db_models.py
+# No need for separate migration since vector indexes are created with the table
+
 # List of all migrations in order
-MIGRATIONS: List[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
+MIGRATIONS: List[tuple[int, str, Callable[[Any], None]]] = [
     (1, "Add linked_file_id to chunks table", migration_001_add_linked_files),
 ]
 
 
-def run_migrations(conn: sqlite3.Connection):
+def run_migrations(conn: Any):
     """Run all pending migrations."""
     current_version = get_schema_version(conn)
     logger.info(f"Current database schema version: {current_version}")

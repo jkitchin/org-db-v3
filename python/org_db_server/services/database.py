@@ -1,5 +1,5 @@
 """Database service for org-db."""
-import sqlite3
+import libsql
 from pathlib import Path
 from typing import Optional, List, Dict
 from datetime import datetime
@@ -12,14 +12,22 @@ from org_db_server.migrations import run_migrations
 logger = logging.getLogger(__name__)
 
 
+def _row_to_dict(cursor, row):
+    """Convert a database row tuple to a dict using cursor description."""
+    if row is None:
+        return None
+    return {desc[0]: value for desc, value in zip(cursor.description, row)}
+
+
 class Database:
     """Database connection and operations."""
 
     def __init__(self, db_path: Path):
         """Initialize database connection and create schema if needed."""
         self.db_path = db_path
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
+        # libsql doesn't support check_same_thread parameter
+        self.conn = libsql.connect(str(db_path))
+        # Note: libsql doesn't support row_factory, we'll handle dict conversion where needed
 
         # Enable foreign keys
         self.conn.execute("PRAGMA foreign_keys = ON")
@@ -291,9 +299,7 @@ class Database:
             (linked_file_id,)
         )
         row = cursor.fetchone()
-        if row:
-            return dict(row)
-        return None
+        return _row_to_dict(cursor, row)
 
     def get_linked_files_for_org_file(self, org_file_id: int) -> List[Dict]:
         """Get all linked files for an org file with chunk counts."""
@@ -307,4 +313,4 @@ class Database:
                ORDER BY lf.org_link_line""",
             (org_file_id,)
         )
-        return [dict(row) for row in cursor.fetchall()]
+        return [_row_to_dict(cursor, row) for row in cursor.fetchall()]

@@ -222,11 +222,12 @@ CREATE INDEX IF NOT EXISTS idx_chunks_headline ON chunks(headline_id);
 CREATE INDEX IF NOT EXISTS idx_chunks_linked_file ON chunks(linked_file_id);
 
 -- Embeddings table
+-- Note: F32_BLOB(384) is required for libsql vector search (all-MiniLM-L6-v2 model)
 CREATE TABLE IF NOT EXISTS embeddings (
     rowid INTEGER PRIMARY KEY,
     chunk_id INTEGER NOT NULL,
     embedding_model TEXT NOT NULL,
-    embedding_vector BLOB NOT NULL,
+    embedding_vector F32_BLOB(384) NOT NULL,
     embedding_dim INTEGER NOT NULL,
     created_at TEXT,
     FOREIGN KEY(chunk_id) REFERENCES chunks(rowid) ON DELETE CASCADE
@@ -234,6 +235,9 @@ CREATE TABLE IF NOT EXISTS embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_chunk ON embeddings(chunk_id);
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings(embedding_model);
+
+-- Vector index for fast semantic search using libsql_vector_idx
+CREATE INDEX IF NOT EXISTS idx_embeddings_vector ON embeddings(libsql_vector_idx(embedding_vector));
 
 -- Images table
 CREATE TABLE IF NOT EXISTS images (
@@ -252,11 +256,12 @@ CREATE TABLE IF NOT EXISTS images (
 CREATE INDEX IF NOT EXISTS idx_images_path ON images(image_path);
 
 -- Image embeddings table (CLIP)
+-- Note: F32_BLOB(512) is required for libsql vector search (clip-ViT-B-32 model)
 CREATE TABLE IF NOT EXISTS image_embeddings (
     rowid INTEGER PRIMARY KEY,
     image_id INTEGER NOT NULL,
     clip_model TEXT NOT NULL,
-    embedding_vector BLOB NOT NULL,
+    embedding_vector F32_BLOB(512) NOT NULL,
     embedding_dim INTEGER NOT NULL,
     created_at TEXT,
     FOREIGN KEY(image_id) REFERENCES images(rowid) ON DELETE CASCADE
@@ -264,6 +269,9 @@ CREATE TABLE IF NOT EXISTS image_embeddings (
 
 CREATE INDEX IF NOT EXISTS idx_image_embeddings_image ON image_embeddings(image_id);
 CREATE INDEX IF NOT EXISTS idx_image_embeddings_model ON image_embeddings(clip_model);
+
+-- Vector index for fast image search using libsql_vector_idx
+CREATE INDEX IF NOT EXISTS idx_image_embeddings_vector ON image_embeddings(libsql_vector_idx(embedding_vector));
 
 -- Full-text search virtual table
 CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
