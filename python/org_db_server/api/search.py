@@ -26,143 +26,249 @@ db = Database(settings.db_path)
 @router.post("/semantic", response_model=SemanticSearchResponse)
 async def semantic_search(request: SemanticSearchRequest):
     """Perform semantic search using embeddings with fast vector_top_k()."""
+    import time
+    start_time = time.perf_counter()
     try:
         # Get embedding service
+        t1 = time.perf_counter()
         model_name = request.model or "all-MiniLM-L6-v2"
         embedding_service = get_embedding_service(model_name)
+        logger.debug(f"Get embedding service: {(time.perf_counter()-t1)*1000:.1f}ms")
 
         # Generate query embedding
+        t1 = time.perf_counter()
         query_embedding = embedding_service.generate_embedding(request.query)
+        logger.info(f"Generate embedding: {(time.perf_counter()-t1)*1000:.1f}ms")
 
         # Convert query embedding to bytes for libsql
         query_bytes = query_embedding.astype(np.float32).tobytes()
 
+        # Use global database connection (now with correct path)
         cursor = db.conn.cursor()
+
+        # Count total embeddings to decide between exact vs ANN search
+        cursor.execute("SELECT COUNT(*) FROM embeddings WHERE embedding_model = ?", [model_name])
+        total_embeddings = cursor.fetchone()[0]
 
         # Determine how many candidates to retrieve for reranking
         num_candidates = request.rerank_candidates if request.rerank else request.limit
 
-        # Use vector_top_k() for fast approximate nearest neighbor search
+        # Use exact search for small datasets (<5000) and ANN for large datasets
+        # Exact search is more accurate and faster for small-to-medium datasets
+        use_exact_search = total_embeddings < 5000
+
         # Build query with optional filters
-        if request.filename_pattern or request.keyword:
-            # With filters: join vector_top_k results with filtered files
-            filter_query = """
-                SELECT f.rowid FROM files f
-                WHERE 1=1
+        t1 = time.perf_counter()
+
+        if use_exact_search:
+            # Exact search: fetch all embeddings and calculate similarities in Python
+            logger.debug(f"Using exact search for {total_embeddings} embeddings")
+
+            base_query = """
+                SELECT
+                    e.chunk_id,
+                    e.embedding_vector,
+                    c.chunk_text,
+                    c.chunk_type,
+                    c.begin_line,
+                    c.end_line,
+                    f.filename,
+                    lf.file_path as linked_file_path,
+                    lf.file_type as linked_file_type
+                FROM embeddings e
+                JOIN chunks c ON e.chunk_id = c.rowid
+                JOIN files f ON c.filename_id = f.rowid
+                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
             """
-            filter_params = []
+
+            params = [model_name]
+            where_clauses = ["e.embedding_model = ?"]
 
             if request.filename_pattern:
-                filter_query += " AND f.filename LIKE ?"
-                filter_params.append(request.filename_pattern)
+                where_clauses.append("f.filename LIKE ?")
+                params.append(request.filename_pattern)
 
             if request.keyword:
-                filter_query += """
-                    AND EXISTS (
-                        SELECT 1 FROM file_keywords fk
-                        JOIN keywords k ON fk.keyword_id = k.rowid
-                        WHERE fk.filename_id = f.rowid AND k.keyword = ?
-                    )
+                base_query += """
+                    JOIN file_keywords fk ON f.rowid = fk.filename_id
+                    JOIN keywords k ON fk.keyword_id = k.rowid
                 """
-                filter_params.append(request.keyword)
+                where_clauses.append("k.keyword = ?")
+                params.append(request.keyword)
 
-            # Get matching file IDs
-            cursor.execute(filter_query, filter_params)
-            matching_file_ids = {row[0] for row in cursor.fetchall()}
+            base_query += " WHERE " + " AND ".join(where_clauses)
+            cursor.execute(base_query, params)
+            rows = cursor.fetchall()
+            logger.info(f"Exact search query: {(time.perf_counter()-t1)*1000:.1f}ms")
 
-            if not matching_file_ids:
+            if not rows:
                 return SemanticSearchResponse(
                     results=[],
                     query=request.query,
                     model_used=model_name
                 )
 
-            # Get more candidates from vector search and filter
-            cursor.execute("""
-                SELECT
-                    vt.id as chunk_id,
-                    c.chunk_text,
-                    c.chunk_type,
-                    c.begin_line,
-                    c.end_line,
-                    f.filename,
-                    lf.file_path as linked_file_path,
-                    lf.file_type as linked_file_type,
-                    e.embedding_vector
-                FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
-                JOIN embeddings e ON e.rowid = vt.id
-                JOIN chunks c ON c.rowid = e.chunk_id
-                JOIN files f ON c.filename_id = f.rowid
-                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
-                WHERE e.embedding_model = ? AND f.rowid IN ({})
-            """.format(','.join('?' * len(matching_file_ids))),
-                [query_bytes, num_candidates * 3, model_name] + list(matching_file_ids)
-            )
-            rows = cursor.fetchall()[:num_candidates]
+            # Calculate similarities for all chunks
+            t1 = time.perf_counter()
+            results_with_scores = []
+            for row in rows:
+                chunk_id = row[0]
+                embedding_bytes = row[1]
+                chunk_text = row[2]
+                chunk_type = row[3]
+                begin_line = row[4]
+                end_line = row[5]
+                filename = row[6]
+                linked_file_path = row[7]
+                linked_file_type = row[8]
+
+                stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+                similarity = float(embedding_service.similarity(query_embedding, stored_embedding))
+
+                # Add file extension prefix for non-org files
+                if linked_file_path and linked_file_type:
+                    ext = linked_file_type.upper() if linked_file_type else linked_file_path.split('.')[-1].upper()
+                    chunk_text = f"[{ext}] {chunk_text}"
+
+                results_with_scores.append((similarity, SearchResult(
+                    chunk_id=chunk_id,
+                    chunk_text=chunk_text,
+                    chunk_type=chunk_type,
+                    begin_line=begin_line,
+                    end_line=end_line,
+                    filename=filename,
+                    similarity_score=similarity,
+                    linked_file_path=linked_file_path,
+                    linked_file_type=linked_file_type
+                )))
+
+            # Sort by similarity (highest first) and take top N
+            results_with_scores.sort(key=lambda x: x[0], reverse=True)
+            search_results = [result for _, result in results_with_scores[:num_candidates]]
+            logger.info(f"Similarity calculation: {(time.perf_counter()-t1)*1000:.1f}ms")
+
         else:
-            # No filters: use vector_top_k directly
-            cursor.execute("""
-                SELECT
-                    vt.id as chunk_id,
-                    c.chunk_text,
-                    c.chunk_type,
-                    c.begin_line,
-                    c.end_line,
-                    f.filename,
-                    lf.file_path as linked_file_path,
-                    lf.file_type as linked_file_type,
-                    e.embedding_vector
-                FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
-                JOIN embeddings e ON e.rowid = vt.id
-                JOIN chunks c ON c.rowid = e.chunk_id
-                JOIN files f ON c.filename_id = f.rowid
-                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
-                WHERE e.embedding_model = ?
-            """, [query_bytes, num_candidates, model_name])
-            rows = cursor.fetchall()
+            # Use vector_top_k for larger datasets
+            if request.filename_pattern or request.keyword:
+                # With filters: join vector_top_k results with filtered files
+                filter_query = """
+                    SELECT f.rowid FROM files f
+                    WHERE 1=1
+                """
+                filter_params = []
 
-        if not rows:
-            return SemanticSearchResponse(
-                results=[],
-                query=request.query,
-                model_used=model_name
-            )
+                if request.filename_pattern:
+                    filter_query += " AND f.filename LIKE ?"
+                    filter_params.append(request.filename_pattern)
 
-        # Build results from vector_top_k output
-        # vector_top_k returns results in order, but we need to calculate similarity
-        search_results = []
+                if request.keyword:
+                    filter_query += """
+                        AND EXISTS (
+                            SELECT 1 FROM file_keywords fk
+                            JOIN keywords k ON fk.keyword_id = k.rowid
+                            WHERE fk.filename_id = f.rowid AND k.keyword = ?
+                        )
+                    """
+                    filter_params.append(request.keyword)
 
-        for row in rows:
-            chunk_id = row[0]
-            chunk_text = row[1]
-            chunk_type = row[2]
-            begin_line = row[3]
-            end_line = row[4]
-            filename = row[5]
-            linked_file_path = row[6]
-            linked_file_type = row[7]
-            embedding_bytes = row[8]
+                # Get matching file IDs
+                cursor.execute(filter_query, filter_params)
+                matching_file_ids = {row[0] for row in cursor.fetchall()}
 
-            # Calculate cosine similarity
-            stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
-            similarity = float(embedding_service.similarity(query_embedding, stored_embedding))
+                if not matching_file_ids:
+                    return SemanticSearchResponse(
+                        results=[],
+                        query=request.query,
+                        model_used=model_name
+                    )
 
-            # Add file extension prefix for non-org files
-            if linked_file_path and linked_file_type:
-                ext = linked_file_type.upper() if linked_file_type else linked_file_path.split('.')[-1].upper()
-                chunk_text = f"[{ext}] {chunk_text}"
+                # Get more candidates from vector search and filter
+                cursor.execute("""
+                    SELECT
+                        vt.id as chunk_id,
+                        c.chunk_text,
+                        c.chunk_type,
+                        c.begin_line,
+                        c.end_line,
+                        f.filename,
+                        lf.file_path as linked_file_path,
+                        lf.file_type as linked_file_type,
+                        e.embedding_vector
+                    FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                    JOIN embeddings e ON e.rowid = vt.id
+                    JOIN chunks c ON c.rowid = e.chunk_id
+                    JOIN files f ON c.filename_id = f.rowid
+                    LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
+                    WHERE e.embedding_model = ? AND f.rowid IN ({})
+                """.format(','.join('?' * len(matching_file_ids))),
+                    [query_bytes, num_candidates * 3, model_name] + list(matching_file_ids)
+                )
+                rows = cursor.fetchall()[:num_candidates]
+                logger.info(f"Vector search with filters: {(time.perf_counter()-t1)*1000:.1f}ms")
+            else:
+                # No filters: use vector_top_k directly
+                cursor.execute("""
+                    SELECT
+                        vt.id as chunk_id,
+                        c.chunk_text,
+                        c.chunk_type,
+                        c.begin_line,
+                        c.end_line,
+                        f.filename,
+                        lf.file_path as linked_file_path,
+                        lf.file_type as linked_file_type,
+                        e.embedding_vector
+                    FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                    JOIN embeddings e ON e.rowid = vt.id
+                    JOIN chunks c ON c.rowid = e.chunk_id
+                    JOIN files f ON c.filename_id = f.rowid
+                    LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
+                    WHERE e.embedding_model = ?
+                """, [query_bytes, num_candidates, model_name])
+                rows = cursor.fetchall()
+                logger.info(f"Vector search (no filters): {(time.perf_counter()-t1)*1000:.1f}ms")
 
-            search_results.append(SearchResult(
-                chunk_id=chunk_id,
-                chunk_text=chunk_text,
-                chunk_type=chunk_type,
-                begin_line=begin_line,
-                end_line=end_line,
-                filename=filename,
-                similarity_score=similarity,
-                linked_file_path=linked_file_path,
-                linked_file_type=linked_file_type
-            ))
+            # Build results from vector_top_k output (common for both filtered and unfiltered)
+            if not rows:
+                return SemanticSearchResponse(
+                    results=[],
+                    query=request.query,
+                    model_used=model_name
+                )
+
+            # vector_top_k returns results in order, but we need to calculate similarity
+            search_results = []
+            for row in rows:
+                chunk_id = row[0]
+                chunk_text = row[1]
+                chunk_type = row[2]
+                begin_line = row[3]
+                end_line = row[4]
+                filename = row[5]
+                linked_file_path = row[6]
+                linked_file_type = row[7]
+                embedding_bytes = row[8]
+
+                # Calculate cosine similarity
+                stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
+                similarity = float(embedding_service.similarity(query_embedding, stored_embedding))
+
+                # Add file extension prefix for non-org files
+                if linked_file_path and linked_file_type:
+                    ext = linked_file_type.upper() if linked_file_type else linked_file_path.split('.')[-1].upper()
+                    chunk_text = f"[{ext}] {chunk_text}"
+
+                search_results.append(SearchResult(
+                    chunk_id=chunk_id,
+                    chunk_text=chunk_text,
+                    chunk_type=chunk_type,
+                    begin_line=begin_line,
+                    end_line=end_line,
+                    filename=filename,
+                    similarity_score=similarity,
+                    linked_file_path=linked_file_path,
+                    linked_file_type=linked_file_type
+                ))
 
         # Apply cross-encoder reranking if requested
         reranked = False
@@ -185,6 +291,9 @@ async def semantic_search(request: SemanticSearchRequest):
         else:
             # Just take top N results
             search_results = search_results[:request.limit]
+
+        total_time = time.perf_counter() - start_time
+        logger.info(f"Semantic search TOTAL: {total_time*1000:.1f}ms (query='{request.query}', results={len(search_results)})")
 
         return SemanticSearchResponse(
             results=search_results,

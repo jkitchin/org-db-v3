@@ -20,6 +20,12 @@
 (declare-function org-db-v3-ensure-server "org-db-v3")
 (declare-function org-db-v3--scope-to-params "org-db-v3-ui")
 
+;; External package functions
+(declare-function plz "plz")
+(declare-function plz-error-message "plz")
+(declare-function ivy-read "ivy")
+(declare-function ivy-configure "ivy")
+
 ;; Forward declare scope variable
 (defvar org-db-v3-search-scope)
 
@@ -209,9 +215,6 @@ Queries shorter than this will show a prompt message."
   :type 'integer
   :group 'org-db-v3)
 
-(defvar org-db-v3--semantic-cache (make-hash-table :test 'equal)
-  "Cache for semantic search results to avoid redundant API calls.")
-
 (defvar org-db-v3--current-semantic-limit 20
   "Current limit for semantic search, can be set via prefix arg.")
 
@@ -225,9 +228,6 @@ With prefix arg (C-u), prompts for custom limit."
                        (read-number "Results per query: " org-db-v3-ivy-semantic-limit))))
 
   (org-db-v3-ensure-server)
-
-  ;; Clear cache on new search
-  (clrhash org-db-v3--semantic-cache)
 
   ;; Set current limit for use in dynamic collection
   (setq org-db-v3--current-semantic-limit (or limit org-db-v3-ivy-semantic-limit))
@@ -244,57 +244,52 @@ With prefix arg (C-u), prompts for custom limit."
 
 (defun org-db-v3--dynamic-semantic-collection (input)
   "Fetch semantic results matching INPUT dynamically.
-Called by ivy as the user types. Returns a list of candidates.
-Results are cached to avoid redundant API calls."
+Called by ivy as the user types. Returns a list of candidates."
   (if (< (length input) org-db-v3-ivy-semantic-min-query-length)
       ;; Show prompt for short queries
       (list (format "Type at least %d characters to search..." org-db-v3-ivy-semantic-min-query-length))
 
-    ;; Check cache first
-    (or (gethash input org-db-v3--semantic-cache)
-        ;; Not in cache, fetch from API
-        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
-                               (org-db-v3--scope-to-params)))
-               (request-body (append `((query . ,input)
-                                      (limit . ,org-db-v3--current-semantic-limit)
-                                      (rerank . ,(if org-db-v3-search-use-reranking t :json-false))
-                                      (rerank_candidates . ,org-db-v3-search-rerank-candidates))
-                                    (when scope-params
-                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
-                                            (cons 'keyword (plist-get scope-params :keyword))))))
-               ;; Synchronous request (required for dynamic collection)
-               (response
-                (condition-case err
-                    (let ((url-request-method "POST")
-                          (url-request-extra-headers '(("Content-Type" . "application/json")))
-                          (url-request-data (encode-coding-string
-                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
-                                            'utf-8)))
-                      (let ((buffer (url-retrieve-synchronously
-                                     (concat (org-db-v3-server-url) "/api/search/semantic")
-                                     t nil 5)))  ; 5 second timeout
-                        (if (not buffer)
-                            nil
-                          (unwind-protect
-                              (with-current-buffer buffer
-                                (goto-char (point-min))
-                                (when (re-search-forward "^$" nil t)
-                                  (json-read)))
-                            (kill-buffer buffer)))))
-                  (error
-                   (message "Semantic search error: %S" err)
-                   nil))))
+    ;; Fetch from API
+    (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                           (org-db-v3--scope-to-params)))
+           (request-body (append `((query . ,input)
+                                  (limit . ,org-db-v3--current-semantic-limit)
+                                  (rerank . ,(if org-db-v3-search-use-reranking t :json-false))
+                                  (rerank_candidates . ,org-db-v3-search-rerank-candidates))
+                                (when scope-params
+                                  (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                        (cons 'keyword (plist-get scope-params :keyword))))))
+           ;; Synchronous request (required for dynamic collection)
+           (response
+            (condition-case err
+                (let ((url-request-method "POST")
+                      (url-request-extra-headers '(("Content-Type" . "application/json")))
+                      (url-request-data (encode-coding-string
+                                        (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                        'utf-8)))
+                  (let ((buffer (url-retrieve-synchronously
+                                 (concat (org-db-v3-server-url) "/api/search/semantic")
+                                 t nil 5)))  ; 5 second timeout
+                    (if (not buffer)
+                        nil
+                      (unwind-protect
+                          (with-current-buffer buffer
+                            (goto-char (point-min))
+                            (when (re-search-forward "^$" nil t)
+                              (json-read)))
+                        (kill-buffer buffer)))))
+              (error
+               (message "Semantic search error: %S" err)
+               nil))))
 
-          (if (and response (vectorp (alist-get 'results response)))
-              (let* ((results (alist-get 'results response))
-                     (candidates (if (zerop (length results))
-                                    (list (format "No results found for: %s" input))
-                                  (org-db-v3--build-ivy-semantic-candidates results))))
-                ;; Cache the results
-                (puthash input candidates org-db-v3--semantic-cache)
-                candidates)
-            ;; Error or no results
-            (list (format "Search failed or no results for: %s" input)))))))
+      (if (and response (vectorp (alist-get 'results response)))
+          (let* ((results (alist-get 'results response))
+                 (candidates (if (zerop (length results))
+                                (list (format "No results found for: %s" input))
+                              (org-db-v3--build-ivy-semantic-candidates results))))
+            candidates)
+        ;; Error or no results
+        (list (format "Search failed or no results for: %s" input))))))
 
 (defun org-db-v3--build-ivy-semantic-candidates (results)
   "Build ivy candidates from semantic RESULTS array.
@@ -601,9 +596,6 @@ Queries shorter than this will show a prompt message."
   :type 'integer
   :group 'org-db-v3)
 
-(defvar org-db-v3--image-cache (make-hash-table :test 'equal)
-  "Cache for image search results to avoid redundant API calls.")
-
 (defvar org-db-v3--current-image-limit 20
   "Current limit for image search, can be set via prefix arg.")
 
@@ -617,9 +609,6 @@ With prefix arg (C-u), prompts for custom limit."
                        (read-number "Results per query: " org-db-v3-ivy-image-limit))))
 
   (org-db-v3-ensure-server)
-
-  ;; Clear cache on new search
-  (clrhash org-db-v3--image-cache)
 
   ;; Set current limit for use in dynamic collection
   (setq org-db-v3--current-image-limit (or limit org-db-v3-ivy-image-limit))
@@ -637,51 +626,46 @@ With prefix arg (C-u), prompts for custom limit."
 
 (defun org-db-v3--dynamic-image-collection (input)
   "Fetch images matching INPUT dynamically.
-Called by ivy as the user types. Returns a list of candidates with thumbnails.
-Results are cached to avoid redundant API calls."
+Called by ivy as the user types. Returns a list of candidates with thumbnails."
   (if (< (length input) org-db-v3-ivy-min-query-length)
       ;; Show prompt for short queries
       (list (format "Type at least %d characters to search..." org-db-v3-ivy-min-query-length))
 
-    ;; Check cache first
-    (or (gethash input org-db-v3--image-cache)
-        ;; Not in cache, fetch from API
-        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
-                               (org-db-v3--scope-to-params)))
-               (request-body (append `((query . ,input)
-                                      (limit . ,org-db-v3--current-image-limit))
-                                    (when scope-params
-                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
-                                            (cons 'keyword (plist-get scope-params :keyword))))))
-               ;; Synchronous request (required for dynamic collection)
-               (response
-                (condition-case err
-                    (let ((url-request-method "POST")
-                          (url-request-extra-headers '(("Content-Type" . "application/json")))
-                          (url-request-data (encode-coding-string
-                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
-                                            'utf-8)))
-                      (with-current-buffer
-                          (url-retrieve-synchronously
-                           (concat (org-db-v3-server-url) "/api/search/images")
-                           t nil 5)  ; 5 second timeout
-                        (goto-char (point-min))
-                        (re-search-forward "^$")
-                        (json-read)))
-                  (error
-                   (message "Image search error: %S" err)
-                   nil))))
+    ;; Fetch from API
+    (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                           (org-db-v3--scope-to-params)))
+           (request-body (append `((query . ,input)
+                                  (limit . ,org-db-v3--current-image-limit))
+                                (when scope-params
+                                  (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                        (cons 'keyword (plist-get scope-params :keyword))))))
+           ;; Synchronous request (required for dynamic collection)
+           (response
+            (condition-case err
+                (let ((url-request-method "POST")
+                      (url-request-extra-headers '(("Content-Type" . "application/json")))
+                      (url-request-data (encode-coding-string
+                                        (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                        'utf-8)))
+                  (with-current-buffer
+                      (url-retrieve-synchronously
+                       (concat (org-db-v3-server-url) "/api/search/images")
+                       t nil 5)  ; 5 second timeout
+                    (goto-char (point-min))
+                    (re-search-forward "^$")
+                    (json-read)))
+              (error
+               (message "Image search error: %S" err)
+               nil))))
 
-          (if (and response (vectorp (alist-get 'results response)))
-              (let* ((results (alist-get 'results response))
-                     (candidates (if (zerop (length results))
-                                    (list (format "No images found for: %s" input))
-                                  (org-db-v3--build-ivy-image-candidates results))))
-                ;; Cache the results
-                (puthash input candidates org-db-v3--image-cache)
-                candidates)
-            ;; Error or no results
-            (list (format "Search failed or no results for: %s" input)))))))
+      (if (and response (vectorp (alist-get 'results response)))
+          (let* ((results (alist-get 'results response))
+                 (candidates (if (zerop (length results))
+                                (list (format "No images found for: %s" input))
+                              (org-db-v3--build-ivy-image-candidates results))))
+            candidates)
+        ;; Error or no results
+        (list (format "Search failed or no results for: %s" input))))))
 
 (defun org-db-v3--build-ivy-image-candidates (results)
   "Build ivy candidates with thumbnails from RESULTS array.
@@ -771,8 +755,6 @@ Queries shorter than this will show a prompt message."
   :type 'integer
   :group 'org-db-v3)
 
-(defvar org-db-v3--fulltext-cache (make-hash-table :test 'equal)
-  "Cache for fulltext search results to avoid redundant API calls.")
 
 (defvar org-db-v3--current-fulltext-limit 20
   "Current limit for fulltext search, can be set via prefix arg.")
@@ -788,9 +770,6 @@ With prefix arg (C-u), prompts for custom limit."
 
   (org-db-v3-ensure-server)
 
-  ;; Clear cache on new search
-  (clrhash org-db-v3--fulltext-cache)
-
   ;; Set current limit for use in dynamic collection
   (setq org-db-v3--current-fulltext-limit (or limit org-db-v3-ivy-fulltext-limit))
 
@@ -804,55 +783,50 @@ With prefix arg (C-u), prompts for custom limit."
 
 (defun org-db-v3--dynamic-fulltext-collection (input)
   "Fetch fulltext results matching INPUT dynamically.
-Called by ivy as the user types. Returns a list of candidates.
-Results are cached to avoid redundant API calls."
+Called by ivy as the user types. Returns a list of candidates."
   (if (< (length input) org-db-v3-ivy-fulltext-min-query-length)
       ;; Show prompt for short queries
       (list (format "Type at least %d characters to search..." org-db-v3-ivy-fulltext-min-query-length))
 
-    ;; Check cache first
-    (or (gethash input org-db-v3--fulltext-cache)
-        ;; Not in cache, fetch from API
-        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
-                               (org-db-v3--scope-to-params)))
-               (request-body (append `((query . ,input)
-                                      (limit . ,org-db-v3--current-fulltext-limit))
-                                    (when scope-params
-                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
-                                            (cons 'keyword (plist-get scope-params :keyword))))))
-               ;; Synchronous request (required for dynamic collection)
-               (response
-                (condition-case err
-                    (let ((url-request-method "POST")
-                          (url-request-extra-headers '(("Content-Type" . "application/json")))
-                          (url-request-data (encode-coding-string
-                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
-                                            'utf-8)))
-                      (let ((buffer (url-retrieve-synchronously
-                                     (concat (org-db-v3-server-url) "/api/search/fulltext")
-                                     t nil 5)))  ; 5 second timeout (FTS5 is fast)
-                        (if (not buffer)
-                            nil
-                          (unwind-protect
-                              (with-current-buffer buffer
-                                (goto-char (point-min))
-                                (when (re-search-forward "^$" nil t)
-                                  (json-read)))
-                            (kill-buffer buffer)))))
-                  (error
-                   (message "Fulltext search error: %S" err)
-                   nil))))
+    ;; Fetch from API
+    (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                           (org-db-v3--scope-to-params)))
+           (request-body (append `((query . ,input)
+                                  (limit . ,org-db-v3--current-fulltext-limit))
+                                (when scope-params
+                                  (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                        (cons 'keyword (plist-get scope-params :keyword))))))
+           ;; Synchronous request (required for dynamic collection)
+           (response
+            (condition-case err
+                (let ((url-request-method "POST")
+                      (url-request-extra-headers '(("Content-Type" . "application/json")))
+                      (url-request-data (encode-coding-string
+                                        (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                        'utf-8)))
+                  (let ((buffer (url-retrieve-synchronously
+                                 (concat (org-db-v3-server-url) "/api/search/fulltext")
+                                 t nil 5)))  ; 5 second timeout (FTS5 is fast)
+                    (if (not buffer)
+                        nil
+                      (unwind-protect
+                          (with-current-buffer buffer
+                            (goto-char (point-min))
+                            (when (re-search-forward "^$" nil t)
+                              (json-read)))
+                        (kill-buffer buffer)))))
+              (error
+               (message "Fulltext search error: %S" err)
+               nil))))
 
-          (if (and response (vectorp (alist-get 'results response)))
-              (let* ((results (alist-get 'results response))
-                     (candidates (if (zerop (length results))
-                                    (list (format "No results found for: %s" input))
-                                  (org-db-v3--build-ivy-fulltext-candidates results))))
-                ;; Cache the results
-                (puthash input candidates org-db-v3--fulltext-cache)
-                candidates)
-            ;; Error or no results
-            (list (format "Search failed or no results for: %s" input)))))))
+      (if (and response (vectorp (alist-get 'results response)))
+          (let* ((results (alist-get 'results response))
+                 (candidates (if (zerop (length results))
+                                (list (format "No results found for: %s" input))
+                              (org-db-v3--build-ivy-fulltext-candidates results))))
+            candidates)
+        ;; Error or no results
+        (list (format "Search failed or no results for: %s" input))))))
 
 (defun org-db-v3--build-ivy-fulltext-candidates (results)
   "Build ivy candidates from fulltext RESULTS array.
