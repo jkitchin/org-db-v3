@@ -385,6 +385,350 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
                   (beginning-of-line)
                   (recenter))))))))))
 
+;; Ivy-based image search with dynamic collection
+;;
+;; The ivy-based image search queries the API as you type, providing a truly
+;; dynamic search experience. Key features:
+;;
+;; - Queries API dynamically as you type (minimum 2 characters)
+;; - Caches results to avoid redundant API calls
+;; - Multi-line display showing both text and thumbnails
+;; - Multiple actions (use M-o in ivy to access):
+;;   - o: Open org file at image link location (default)
+;;   - i: Open the image file directly
+;;   - c: Copy image path to kill ring
+;; - Thumbnails displayed at 400x250 max size
+;; - Height configured for 20 lines to accommodate thumbnails
+;;
+;; Usage: M-x org-db-v3-image-search-ivy RET
+;; Then start typing your query - results update as you type
+;; With prefix arg (C-u): Change the number of results per query
+
+(defcustom org-db-v3-ivy-image-limit 20
+  "Number of images to fetch per query for ivy-based image search.
+Used when querying the API dynamically as you type."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defcustom org-db-v3-ivy-min-query-length 2
+  "Minimum query length before searching for images.
+Queries shorter than this will show a prompt message."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defvar org-db-v3--image-cache (make-hash-table :test 'equal)
+  "Cache for image search results to avoid redundant API calls.")
+
+(defvar org-db-v3--current-image-limit 20
+  "Current limit for image search, can be set via prefix arg.")
+
+;;;###autoload
+(defun org-db-v3-image-search-ivy (&optional limit)
+  "Perform dynamic image search using ivy - queries API as you type.
+Start typing to search - results update dynamically.
+LIMIT sets number of results per query (default `org-db-v3-ivy-image-limit').
+With prefix arg (C-u), prompts for custom limit."
+  (interactive (list (when current-prefix-arg
+                       (read-number "Results per query: " org-db-v3-ivy-image-limit))))
+
+  (org-db-v3-ensure-server)
+
+  ;; Clear cache on new search
+  (clrhash org-db-v3--image-cache)
+
+  ;; Set current limit for use in dynamic collection
+  (setq org-db-v3--current-image-limit (or limit org-db-v3-ivy-image-limit))
+
+  (if (fboundp 'ivy-read)
+      (ivy-read "Image search (dynamic): "
+                #'org-db-v3--dynamic-image-collection
+                :dynamic-collection t
+                :caller 'org-db-v3-image-search-ivy
+                :action '(1
+                         ("o" org-db-v3--open-image-candidate "Open org file")
+                         ("i" org-db-v3--open-image-file "Open image file")
+                         ("c" org-db-v3--copy-image-path "Copy image path")))
+    (user-error "Ivy is required for dynamic image search. Use org-db-v3-image-search instead")))
+
+(defun org-db-v3--dynamic-image-collection (input)
+  "Fetch images matching INPUT dynamically.
+Called by ivy as the user types. Returns a list of candidates with thumbnails.
+Results are cached to avoid redundant API calls."
+  (if (< (length input) org-db-v3-ivy-min-query-length)
+      ;; Show prompt for short queries
+      (list (format "Type at least %d characters to search..." org-db-v3-ivy-min-query-length))
+
+    ;; Check cache first
+    (or (gethash input org-db-v3--image-cache)
+        ;; Not in cache, fetch from API
+        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                               (org-db-v3--scope-to-params)))
+               (request-body (append `((query . ,input)
+                                      (limit . ,org-db-v3--current-image-limit))
+                                    (when scope-params
+                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                            (cons 'keyword (plist-get scope-params :keyword))))))
+               ;; Synchronous request (required for dynamic collection)
+               (response
+                (condition-case err
+                    (let ((url-request-method "POST")
+                          (url-request-extra-headers '(("Content-Type" . "application/json")))
+                          (url-request-data (encode-coding-string
+                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                            'utf-8)))
+                      (with-current-buffer
+                          (url-retrieve-synchronously
+                           (concat (org-db-v3-server-url) "/api/search/images")
+                           t nil 5)  ; 5 second timeout
+                        (goto-char (point-min))
+                        (re-search-forward "^$")
+                        (json-read)))
+                  (error
+                   (message "Image search error: %S" err)
+                   nil))))
+
+          (if (and response (vectorp (alist-get 'results response)))
+              (let* ((results (alist-get 'results response))
+                     (candidates (if (zerop (length results))
+                                    (list (format "No images found for: %s" input))
+                                  (org-db-v3--build-ivy-image-candidates results))))
+                ;; Cache the results
+                (puthash input candidates org-db-v3--image-cache)
+                candidates)
+            ;; Error or no results
+            (list (format "Search failed or no results for: %s" input)))))))
+
+(defun org-db-v3--build-ivy-image-candidates (results)
+  "Build ivy candidates with thumbnails from RESULTS array.
+Each candidate is a string with metadata stored as text properties."
+  (let ((candidates nil))
+    (dotimes (i (length results))
+      (let* ((result (aref results i))
+             (image-path (alist-get 'image_path result))
+             (filename (alist-get 'filename result))
+             (similarity (alist-get 'similarity_score result))
+             ;; Text line - compact format for filtering
+             (image-basename (file-name-nondirectory image-path))
+             (org-basename (file-name-nondirectory filename))
+             (text-line (format "%.3f | %-40s | %s"
+                               similarity
+                               (if (> (length image-basename) 40)
+                                   (concat (substring image-basename 0 37) "...")
+                                 image-basename)
+                               org-basename))
+             ;; Candidate with thumbnail on second line
+             (candidate (if (and image-path (file-exists-p image-path))
+                           (concat text-line "\n"
+                                  (propertize " " 'display
+                                            (create-image image-path nil nil
+                                                         :max-width 400
+                                                         :max-height 250)))
+                         text-line)))
+
+        ;; Store metadata as text properties
+        (put-text-property 0 (length candidate) 'image-data
+                          `(:path ,image-path :file ,filename :score ,similarity)
+                          candidate)
+        (push candidate candidates)))
+    (nreverse candidates)))
+
+(defun org-db-v3--open-image-candidate (candidate)
+  "Open org file for selected image CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'image-data candidate))
+         (file (plist-get data :file))
+         (image-path (plist-get data :path)))
+    (when (and file (file-exists-p file))
+      (find-file file)
+      (goto-char (point-min))
+      (when (search-forward (file-name-nondirectory image-path) nil t)
+        (beginning-of-line)
+        (recenter)))))
+
+(defun org-db-v3--open-image-file (candidate)
+  "Open the image file directly for CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'image-data candidate))
+         (image-path (plist-get data :path)))
+    (when (and image-path (file-exists-p image-path))
+      (find-file image-path))))
+
+(defun org-db-v3--copy-image-path (candidate)
+  "Copy the image file path to kill ring for CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'image-data candidate))
+         (image-path (plist-get data :path)))
+    (when image-path
+      (kill-new image-path)
+      (message "Copied to kill ring: %s" image-path))))
+
+;; Configure ivy for image search if available
+(with-eval-after-load 'ivy
+  (ivy-configure 'org-db-v3-image-search-ivy
+    :height 20  ; More space for thumbnails
+    :sort-fn nil))  ; Keep relevance order from API
+
+
+;; Ivy-based fulltext search with dynamic collection
+;;
+;; The ivy-based fulltext search queries the FTS5 index as you type, providing
+;; dynamic results. FTS5 is fast (~10-100ms) so this provides good UX.
+
+(defcustom org-db-v3-ivy-fulltext-limit 20
+  "Number of results to fetch per query for ivy-based fulltext search.
+Used when querying the API dynamically as you type."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defcustom org-db-v3-ivy-fulltext-min-query-length 2
+  "Minimum query length before searching fulltext.
+Queries shorter than this will show a prompt message."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defvar org-db-v3--fulltext-cache (make-hash-table :test 'equal)
+  "Cache for fulltext search results to avoid redundant API calls.")
+
+(defvar org-db-v3--current-fulltext-limit 20
+  "Current limit for fulltext search, can be set via prefix arg.")
+
+;;;###autoload
+(defun org-db-v3-fulltext-search-ivy (&optional limit)
+  "Perform dynamic fulltext search using ivy - queries API as you type.
+Start typing to search - results update dynamically.
+LIMIT sets number of results per query (default `org-db-v3-ivy-fulltext-limit').
+With prefix arg (C-u), prompts for custom limit."
+  (interactive (list (when current-prefix-arg
+                       (read-number "Results per query: " org-db-v3-ivy-fulltext-limit))))
+
+  (org-db-v3-ensure-server)
+
+  ;; Clear cache on new search
+  (clrhash org-db-v3--fulltext-cache)
+
+  ;; Set current limit for use in dynamic collection
+  (setq org-db-v3--current-fulltext-limit (or limit org-db-v3-ivy-fulltext-limit))
+
+  (if (fboundp 'ivy-read)
+      (ivy-read "Fulltext search (dynamic): "
+                #'org-db-v3--dynamic-fulltext-collection
+                :dynamic-collection t
+                :caller 'org-db-v3-fulltext-search-ivy
+                :action #'org-db-v3--open-fulltext-candidate)
+    (user-error "Ivy is required for dynamic fulltext search. Use org-db-v3-fulltext-search instead")))
+
+(defun org-db-v3--dynamic-fulltext-collection (input)
+  "Fetch fulltext results matching INPUT dynamically.
+Called by ivy as the user types. Returns a list of candidates.
+Results are cached to avoid redundant API calls."
+  (if (< (length input) org-db-v3-ivy-fulltext-min-query-length)
+      ;; Show prompt for short queries
+      (list (format "Type at least %d characters to search..." org-db-v3-ivy-fulltext-min-query-length))
+
+    ;; Check cache first
+    (or (gethash input org-db-v3--fulltext-cache)
+        ;; Not in cache, fetch from API
+        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                               (org-db-v3--scope-to-params)))
+               (request-body (append `((query . ,input)
+                                      (limit . ,org-db-v3--current-fulltext-limit))
+                                    (when scope-params
+                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                            (cons 'keyword (plist-get scope-params :keyword))))))
+               ;; Synchronous request (required for dynamic collection)
+               (response
+                (condition-case err
+                    (let ((url-request-method "POST")
+                          (url-request-extra-headers '(("Content-Type" . "application/json")))
+                          (url-request-data (encode-coding-string
+                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                            'utf-8)))
+                      (let ((buffer (url-retrieve-synchronously
+                                     (concat (org-db-v3-server-url) "/api/search/fulltext")
+                                     t nil 5)))  ; 5 second timeout (FTS5 is fast)
+                        (if (not buffer)
+                            nil
+                          (unwind-protect
+                              (with-current-buffer buffer
+                                (goto-char (point-min))
+                                (when (re-search-forward "^$" nil t)
+                                  (json-read)))
+                            (kill-buffer buffer)))))
+                  (error
+                   (message "Fulltext search error: %S" err)
+                   nil))))
+
+          (if (and response (vectorp (alist-get 'results response)))
+              (let* ((results (alist-get 'results response))
+                     (candidates (if (zerop (length results))
+                                    (list (format "No results found for: %s" input))
+                                  (org-db-v3--build-ivy-fulltext-candidates results))))
+                ;; Cache the results
+                (puthash input candidates org-db-v3--fulltext-cache)
+                candidates)
+            ;; Error or no results
+            (list (format "Search failed or no results for: %s" input)))))))
+
+(defun org-db-v3--build-ivy-fulltext-candidates (results)
+  "Build ivy candidates from fulltext RESULTS array.
+Each candidate is a string with metadata stored as text properties."
+  (let ((candidates nil))
+    (dotimes (i (length results))
+      (let* ((result (aref results i))
+             (filename (alist-get 'filename result))
+             (title (alist-get 'title result))
+             (snippet (alist-get 'snippet result))
+             (rank (alist-get 'rank result))
+             ;; Extract search term from snippet (text between >>> and <<<)
+             (search-term (when (string-match ">>>\\([^<]+\\)<<<" snippet)
+                           (match-string 1 snippet)))
+             ;; Clean snippet for display
+             (clean-snippet (replace-regexp-in-string
+                            "[\n\r]+" " "
+                            (replace-regexp-in-string ">>>\\|<<<" "" snippet)))
+             (snippet-width 60)
+             (display-snippet (if (> (length clean-snippet) snippet-width)
+                                 (concat (substring clean-snippet 0 (- snippet-width 3)) "...")
+                               clean-snippet))
+             (padded-snippet (format (format "%%-%ds" snippet-width) display-snippet))
+             ;; Format: rank | snippet | filename
+             (candidate (format "%8.2f | %s | %s"
+                               (abs rank)
+                               padded-snippet
+                               (file-name-nondirectory filename))))
+
+        ;; Store metadata as text properties
+        (put-text-property 0 (length candidate) 'fulltext-data
+                          `(:file ,filename :title ,title :search-term ,search-term)
+                          candidate)
+        (push candidate candidates)))
+    (nreverse candidates)))
+
+(defun org-db-v3--open-fulltext-candidate (candidate)
+  "Open file for selected fulltext CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'fulltext-data candidate))
+         (file (plist-get data :file))
+         (search-term (plist-get data :search-term))
+         (title (plist-get data :title)))
+    (when (and file (file-exists-p file))
+      (find-file file)
+      (goto-char (point-min))
+      ;; Try to search for the matched term first, then title
+      (if (and search-term (search-forward search-term nil t))
+          (progn
+            (beginning-of-line)
+            (recenter))
+        (when (search-forward title nil t)
+          (beginning-of-line)
+          (recenter))))))
+
+;; Configure ivy for fulltext search if available
+(with-eval-after-load 'ivy
+  (ivy-configure 'org-db-v3-fulltext-search-ivy
+    :height 15
+    :sort-fn nil))  ; Keep relevance order from API
+
 ;;;###autoload
 (defun org-db-v3-headline-search ()
   "Browse all headlines and jump to selection.

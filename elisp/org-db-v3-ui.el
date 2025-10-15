@@ -126,45 +126,45 @@ Returns plist with :filename_pattern and/or :keyword."
   ["Search"
    ["Text Search"
     ("v" "Semantic search" org-db-v3-semantic-search
-     :description "Search by meaning using embeddings")
-    ("k" "Full-text search" org-db-v3-fulltext-search
-     :description "Search by keywords (FTS5)")
+     :description "Vector embeddings")
+    ("k" "Full-text search" org-db-v3-fulltext-search-ivy
+     :description "FTS5 keywords (dynamic)")
     ("h" "Headline search" org-db-v3-headline-search
-     :description "Search/browse headlines and jump to them")
+     :description "Browse headlines")
     ("p" "Search at point" org-db-v3-search-at-point
-     :description "Search using text at point/region")]
+     :description "Text at point/region")]
    ["Image Search"
-    ("i" "Search images" org-db-v3-image-search
-     :description "Find images by text description")]
+    ("i" "Search images" org-db-v3-image-search-ivy
+     :description "CLIP embeddings (dynamic)")]
    ["Files"
     ("f" "Open file from db" org-db-v3-open-file
-     :description "Browse and open org files in database")
+     :description "Browse org files")
     ("F" "Open linked file" org-db-v3-open-linked-file
-     :description "Browse indexed linked files (PDF, DOCX, etc.)")]]
+     :description "Browse linked files")]]
   ["Agenda"
    ("a" "Show agenda" org-db-v3-agenda
-    :description "Show TODO items with deadlines and scheduled dates")]
+    :description "TODOs & deadlines")]
   ["Management"
    ["Indexing"
     ("u" "Update current file" org-db-v3-update-current-file
-     :description "Re-index the current org file")
+     :description "Index current file")
     ("U" "Update all open files" org-db-v3-update-all-buffers
-     :description "Re-index all open org buffers")
+     :description "Index all open buffers")
     ("d" "Index directory" org-db-v3-index-directory
-     :description "Recursively index all org files in a directory")
+     :description "Index directory recursively")
     ("r" "Reindex database" org-db-v3-reindex-database
-     :description "Reindex all files currently in the database")]
+     :description "Reindex all files")]
    ["Server"
     ("S" "Server status" org-db-v3-server-status
-     :description "Check if server is running")
+     :description "Check server status")
     ("R" "Restart server" org-db-v3-restart-server
-     :description "Stop and start the server")
+     :description "Restart server")
     ("L" "View server logs" org-db-v3-view-logs
-     :description "Open server log buffer")
+     :description "View logs")
     ("W" "Open web interface" org-db-v3-open-web-interface
-     :description "Open server homepage in browser")
+     :description "Open web UI")
     ("X" "Clear database" org-db-v3-clear-database
-     :description "Delete entire database (destructive!)")]])
+     :description "Clear database (destructive!)")]])
 
 ;;;###autoload
 (defun org-db-v3-update-current-file ()
