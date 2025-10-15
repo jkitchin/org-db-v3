@@ -178,6 +178,191 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
         (org-db-v3-semantic-search query)
       (message "No text found at point"))))
 
+;; Ivy-based semantic search with dynamic collection
+;;
+;; The ivy-based semantic search queries the API as you type, providing a truly
+;; dynamic search experience. Since semantic search uses embeddings, there's a
+;; slight delay (20-50ms) as you type, but results are fast with libsql vector search.
+;;
+;; Key features:
+;; - Queries API dynamically as you type (minimum 2 characters)
+;; - Caches results to avoid redundant API calls
+;; - Optional reranking for improved relevance
+;; - Multiple actions (use M-o in ivy to access):
+;;   - o: Open file at match location (default)
+;;   - c: Copy chunk text to kill ring
+;; - Results show similarity score, context snippet, and file location
+;;
+;; Usage: M-x org-db-v3-semantic-search-ivy RET
+;; Then start typing your query - results update as you type
+;; With prefix arg (C-u): Change the number of results per query
+
+(defcustom org-db-v3-ivy-semantic-limit 20
+  "Number of results to fetch per query for ivy-based semantic search.
+Used when querying the API dynamically as you type."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defcustom org-db-v3-ivy-semantic-min-query-length 2
+  "Minimum query length before searching semantically.
+Queries shorter than this will show a prompt message."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defvar org-db-v3--semantic-cache (make-hash-table :test 'equal)
+  "Cache for semantic search results to avoid redundant API calls.")
+
+(defvar org-db-v3--current-semantic-limit 20
+  "Current limit for semantic search, can be set via prefix arg.")
+
+;;;###autoload
+(defun org-db-v3-semantic-search-ivy (&optional limit)
+  "Perform dynamic semantic search using ivy - queries API as you type.
+Start typing to search - results update dynamically using vector embeddings.
+LIMIT sets number of results per query (default `org-db-v3-ivy-semantic-limit').
+With prefix arg (C-u), prompts for custom limit."
+  (interactive (list (when current-prefix-arg
+                       (read-number "Results per query: " org-db-v3-ivy-semantic-limit))))
+
+  (org-db-v3-ensure-server)
+
+  ;; Clear cache on new search
+  (clrhash org-db-v3--semantic-cache)
+
+  ;; Set current limit for use in dynamic collection
+  (setq org-db-v3--current-semantic-limit (or limit org-db-v3-ivy-semantic-limit))
+
+  (if (fboundp 'ivy-read)
+      (ivy-read "Semantic search (dynamic): "
+                #'org-db-v3--dynamic-semantic-collection
+                :dynamic-collection t
+                :caller 'org-db-v3-semantic-search-ivy
+                :action '(1
+                         ("o" org-db-v3--open-semantic-candidate "Open file")
+                         ("c" org-db-v3--copy-semantic-text "Copy text")))
+    (user-error "Ivy is required for dynamic semantic search. Use org-db-v3-semantic-search instead")))
+
+(defun org-db-v3--dynamic-semantic-collection (input)
+  "Fetch semantic results matching INPUT dynamically.
+Called by ivy as the user types. Returns a list of candidates.
+Results are cached to avoid redundant API calls."
+  (if (< (length input) org-db-v3-ivy-semantic-min-query-length)
+      ;; Show prompt for short queries
+      (list (format "Type at least %d characters to search..." org-db-v3-ivy-semantic-min-query-length))
+
+    ;; Check cache first
+    (or (gethash input org-db-v3--semantic-cache)
+        ;; Not in cache, fetch from API
+        (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                               (org-db-v3--scope-to-params)))
+               (request-body (append `((query . ,input)
+                                      (limit . ,org-db-v3--current-semantic-limit)
+                                      (rerank . ,(if org-db-v3-search-use-reranking t :json-false))
+                                      (rerank_candidates . ,org-db-v3-search-rerank-candidates))
+                                    (when scope-params
+                                      (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                            (cons 'keyword (plist-get scope-params :keyword))))))
+               ;; Synchronous request (required for dynamic collection)
+               (response
+                (condition-case err
+                    (let ((url-request-method "POST")
+                          (url-request-extra-headers '(("Content-Type" . "application/json")))
+                          (url-request-data (encode-coding-string
+                                            (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                            'utf-8)))
+                      (let ((buffer (url-retrieve-synchronously
+                                     (concat (org-db-v3-server-url) "/api/search/semantic")
+                                     t nil 5)))  ; 5 second timeout
+                        (if (not buffer)
+                            nil
+                          (unwind-protect
+                              (with-current-buffer buffer
+                                (goto-char (point-min))
+                                (when (re-search-forward "^$" nil t)
+                                  (json-read)))
+                            (kill-buffer buffer)))))
+                  (error
+                   (message "Semantic search error: %S" err)
+                   nil))))
+
+          (if (and response (vectorp (alist-get 'results response)))
+              (let* ((results (alist-get 'results response))
+                     (candidates (if (zerop (length results))
+                                    (list (format "No results found for: %s" input))
+                                  (org-db-v3--build-ivy-semantic-candidates results))))
+                ;; Cache the results
+                (puthash input candidates org-db-v3--semantic-cache)
+                candidates)
+            ;; Error or no results
+            (list (format "Search failed or no results for: %s" input)))))))
+
+(defun org-db-v3--build-ivy-semantic-candidates (results)
+  "Build ivy candidates from semantic RESULTS array.
+Each candidate is a string with metadata stored as text properties."
+  (let ((candidates nil))
+    (dotimes (i (length results))
+      (let* ((result (aref results i))
+             (chunk-text (alist-get 'chunk_text result))
+             (filename (alist-get 'filename result))
+             (similarity (alist-get 'similarity_score result))
+             (begin-line (alist-get 'begin_line result))
+             (end-line (alist-get 'end_line result))
+             (linked-file-path (alist-get 'linked_file_path result))
+             (linked-file-type (alist-get 'linked_file_type result))
+             ;; Truncate and clean chunk text for display
+             (context-width 60)
+             (display-text (replace-regexp-in-string
+                           "[\n\r]+" " "
+                           (if (> (length chunk-text) context-width)
+                               (concat (substring chunk-text 0 (- context-width 3)) "...")
+                             chunk-text)))
+             (padded-context (format (format "%%-%ds" context-width) display-text))
+             ;; Format: score | context | filename:line
+             (candidate (format "%-6.3f | %s | %s:%d"
+                               similarity
+                               padded-context
+                               (file-name-nondirectory filename)
+                               begin-line)))
+
+        ;; Store metadata as text properties
+        (put-text-property 0 (length candidate) 'semantic-data
+                          `(:file ,filename
+                            :line ,begin-line
+                            :end-line ,end-line
+                            :text ,chunk-text
+                            :linked-file-path ,linked-file-path
+                            :linked-file-type ,linked-file-type)
+                          candidate)
+        (push candidate candidates)))
+    (nreverse candidates)))
+
+(defun org-db-v3--open-semantic-candidate (candidate)
+  "Open file for selected semantic CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'semantic-data candidate))
+         (file (plist-get data :file))
+         (line (plist-get data :line)))
+    (when (and file (file-exists-p file))
+      (find-file file)
+      (goto-char (point-min))
+      (forward-line (1- line))
+      (recenter))))
+
+(defun org-db-v3--copy-semantic-text (candidate)
+  "Copy the chunk text to kill ring for CANDIDATE.
+CANDIDATE is a string with metadata stored in text properties."
+  (let* ((data (get-text-property 0 'semantic-data candidate))
+         (text (plist-get data :text)))
+    (when text
+      (kill-new text)
+      (message "Copied to kill ring: %s" (substring text 0 (min 50 (length text)))))))
+
+;; Configure ivy for semantic search if available
+(with-eval-after-load 'ivy
+  (ivy-configure 'org-db-v3-semantic-search-ivy
+    :height 15
+    :sort-fn nil))  ; Keep relevance order from API
+
 ;;;###autoload
 (defun org-db-v3-fulltext-search (query &optional limit)
   "Perform full-text search for QUERY using FTS5.
