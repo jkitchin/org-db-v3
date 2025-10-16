@@ -10,7 +10,7 @@ from org_db_server.config import settings
 router = APIRouter(prefix="/api", tags=["agenda"])
 
 # Global database instance
-db = Database(settings.db_path)
+db = Database(settings.db_path, settings.semantic_db_path, settings.image_db_path)
 
 
 class AgendaRequest(BaseModel):
@@ -79,7 +79,7 @@ def parse_relative_date(date_str: str) -> str:
 async def get_agenda(request: AgendaRequest):
     """Get agenda items (TODO tasks with deadlines or scheduled dates)."""
     try:
-        cursor = db.conn.cursor()
+        cursor = db.main_conn.cursor()
 
         # Parse the before date
         before_date = parse_relative_date(request.before)

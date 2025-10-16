@@ -15,7 +15,7 @@ A modern org-mode database with semantic search capabilities. Built with a hybri
 - *Scoped Search* :: Limit searches to specific directories, projects (Projectile), or keyword/tags
 - *Agenda* :: View TODOs, deadlines, and scheduled items from all indexed files
 - *Non-blocking Indexing* :: Queue-based indexing with configurable delays keeps Emacs responsive
-- *Linked File Indexing* :: Automatically indexes linked documents (PDF, DOCX, PPTX, etc.) for comprehensive search
+- *Linked File Indexing* :: (Experimental/disabled) Can index linked documents (PDF, DOCX, PPTX, etc.) - needs optimization for large collections
 - *gptel Integration* :: Expose search tools to LLMs for AI-powered org file exploration
 - *Transient UI* :: Easy-to-use menu system for all commands (=H-v= or =M-x org-db=)
 - *Web Interface* :: Browse statistics and documentation via browser
@@ -207,17 +207,50 @@ By default, shows items due in the next **2 weeks**. Use prefix argument (=C-u M
 
 ** 6. Linked File Indexing
 
-org-db v3 automatically indexes linked documents (PDF, DOCX, PPTX, etc.) found in your org files. When you index an org file containing links like =[[./report.pdf]]= or =[[./proposal.docx]]=, the system:
+⚠️ *IMPORTANT: Linked file indexing is currently DISABLED by default due to performance issues.*
 
-1. Detects the linked file
-2. Converts it to markdown using lightweight libraries:
-   - PDFs: pymupdf4llm (~10MB memory)
-   - DOCX: python-docx (text extraction)
-   - PPTX: python-pptx (text extraction)
-3. Chunks the content and generates embeddings
-4. Makes it searchable alongside your org content
+org-db v3 has the capability to index linked documents (PDF, DOCX, PPTX, etc.) found in your org files, but this feature needs significant work to handle large-scale use cases efficiently.
 
-*** Supported Formats
+*** Known Issues
+
+With large document collections (5000+ linked files), linked file indexing can cause:
+- *Database bloat*: 29.5 GB database from paragraph-level chunking
+- *Slow searches*: 30+ second timeouts or server crashes
+- *360,000+ chunk embeddings*: From aggressive per-paragraph chunking
+
+The current implementation chunks each paragraph separately, creating too many embeddings for large PDF collections.
+
+*** Current Status
+
+The feature is *disabled by default* in =python/org_db_server/config.py=:
+
+#+BEGIN_SRC python
+enable_linked_files: bool = False  # Disabled to prevent database bloat
+#+END_SRC
+
+*** Future Work Needed
+
+Before enabling for large collections, the following improvements are needed:
+1. *File-level embeddings*: Aggregate chunks into single embeddings (98% size reduction)
+2. *Smarter chunking*: Use larger fixed-size chunks instead of paragraph chunking
+3. *Selective indexing*: Only index important/recent documents
+4. *Better limits*: Enforce per-file chunk limits and file size limits
+
+See =python/LINKED_FILES_OPTIMIZATION.md= and =python/EMBEDDING_AGGREGATION_STRATEGIES.md= for detailed analysis and solutions.
+
+*** If You Want to Try It
+
+If you have a small number of linked files (<100), you can enable it:
+
+#+BEGIN_SRC bash
+export ORG_DB_ENABLE_LINKED_FILES=true
+export ORG_DB_MAX_LINKED_FILE_SIZE_MB=20      # Skip large files
+export ORG_DB_MAX_LINKED_FILE_CHUNKS=50       # Limit chunks per file
+#+END_SRC
+
+Or edit =python/org_db_server/config.py= and restart the server.
+
+*** Supported Formats (when enabled)
 
 - PDF files (=.pdf=)
 - Microsoft Word (=.docx=)
@@ -234,35 +267,18 @@ M-x org-db-v3-open-linked-file
 ;; or press 'F' in the menu
 #+END_SRC
 
-This shows all indexed linked files with:
-- File type (PDF, DOCX, etc.)
-- Source org file location
-- Number of chunks indexed
-- Conversion status
-
+Shows all indexed linked files with file type, source location, chunks, and conversion status.
 Press =RET= to jump to the org file link location, or =C-u RET= to open the linked file directly.
 
 *** Configuration
 
 #+BEGIN_SRC emacs-lisp
-;; Enable/disable linked file indexing (enabled by default)
-(setq org-db-v3-enable-linked-files t)
+;; Linked file indexing (DISABLED by default - see above)
+(setq org-db-v3-enable-linked-files nil)  ; default: disabled
 
-;; Maximum file size for linked files (50MB default)
-(setq org-db-v3-max-linked-file-size 52428800)
+;; If you enable it for small collections:
+(setq org-db-v3-max-linked-file-size 20971520)  ; 20MB limit
 #+END_SRC
-
-*** Search Results
-
-When searching (semantic or fulltext), results from linked files are clearly marked:
-
-#+BEGIN_EXAMPLE
-File: /path/to/notes.org [linked PDF file: report.pdf]
-Line: 42
-Relevance: 0.834
-Content:
-The quarterly results show a 15% increase...
-#+END_EXAMPLE
 
 ** 7. gptel Integration (AI-Powered Search)
 
@@ -405,9 +421,9 @@ In the =*org-db search*= buffer:
 ;; Search defaults
 (setq org-db-v3-search-default-limit 10)
 
-;; Linked file indexing
-(setq org-db-v3-enable-linked-files t)  ; enabled by default
-(setq org-db-v3-max-linked-file-size 52428800)  ; 50MB default
+;; Linked file indexing (DISABLED by default due to performance issues)
+(setq org-db-v3-enable-linked-files nil)  ; disabled by default
+;; (setq org-db-v3-max-linked-file-size 20971520)  ; 20MB limit if enabled
 
 ;; gptel integration (optional)
 (require 'org-db-v3-gptel-tools)
@@ -797,8 +813,9 @@ If you see "void-variable org-db-v3-server-url" errors:
 - [X] Web interface with statistics
 - [X] Non-blocking directory indexing
 - [X] File browser (open files from database)
-- [X] Linked file indexing (PDF, DOCX, PPTX, etc.) with lightweight libraries
+- [X] Linked file indexing (PDF, DOCX, PPTX, etc.) - *currently disabled due to performance issues with large collections (5000+ files)*
 - [X] Linked file browser (browse and open indexed documents)
+- [ ] File-level embedding aggregation (needed for linked files at scale)
 - [X] gptel integration (expose search tools to LLMs)
 - [X] Search at point
 - [X] Auto-indexing on save
@@ -811,10 +828,17 @@ If you see "void-variable org-db-v3-server-url" errors:
 
 * Future Enhancements
 
+** High Priority (Linked Files)
+- [ ] File-level embedding aggregation (reduce 360K embeddings to 6K)
+- [ ] Smart chunking for linked files (fixed-size instead of paragraph)
+- [ ] Selective linked file indexing (by type, size, date)
+- [ ] Hybrid search (file-level + chunk-level)
+
+** Other Enhancements
 - [ ] Reranking strategy
-- [ ] hybrid search
 - [ ] Custom chunk sizes/strategies
 - [ ] More search filters (date ranges, file patterns)
+- [ ] Incremental indexing optimizations
 
 
 * License

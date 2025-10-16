@@ -234,14 +234,52 @@
         <div class="content">
             <!-- Database Information Section -->
             <div class="section">
-                <h2>💾 Database Information</h2>
-                <div class="stat-card" style="max-width: 100%;">
-                    <h3>Database Location</h3>
-                    <div style="font-family: monospace; color: #374151; margin-top: 10px; font-size: 1em;" id="db-location">
-                        Loading...
+                <h2>💾 Database Architecture</h2>
+                <p style="color: #6b7280; margin-bottom: 20px;">
+                    org-db v3 uses a multi-database architecture for better performance and manageability.
+                    Data is separated into three specialized databases:
+                </p>
+
+                <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
+                    <div class="stat-card" style="border-left-color: #667eea;">
+                        <h3>📋 Main Database</h3>
+                        <div style="font-family: monospace; color: #374151; font-size: 0.85em; margin: 10px 0;" id="main-db-location">
+                            Loading...
+                        </div>
+                        <div class="value" id="main-db-size">-</div>
+                        <p style="color: #6b7280; margin-top: 10px; font-size: 0.85em;">
+                            Metadata, headlines, links, properties, tags, FTS5 full-text search index
+                        </p>
                     </div>
-                    <p style="color: #6b7280; margin-top: 10px; font-size: 0.9em;">
-                        This SQLite database stores all indexed org files, embeddings, and metadata.
+
+                    <div class="stat-card" style="border-left-color: #10b981;">
+                        <h3>🔍 Semantic Database</h3>
+                        <div style="font-family: monospace; color: #374151; font-size: 0.85em; margin: 10px 0;" id="semantic-db-location">
+                            Loading...
+                        </div>
+                        <div class="value" id="semantic-db-size">-</div>
+                        <p style="color: #6b7280; margin-top: 10px; font-size: 0.85em;">
+                            Text chunks and embeddings with libsql vector search for semantic similarity
+                        </p>
+                    </div>
+
+                    <div class="stat-card" style="border-left-color: #f59e0b;">
+                        <h3>🖼️ Image Database</h3>
+                        <div style="font-family: monospace; color: #374151; font-size: 0.85em; margin: 10px 0;" id="image-db-location">
+                            Loading...
+                        </div>
+                        <div class="value" id="image-db-size">-</div>
+                        <p style="color: #6b7280; margin-top: 10px; font-size: 0.85em;">
+                            Images and CLIP embeddings with libsql vector search for image-text matching
+                        </p>
+                    </div>
+                </div>
+
+                <div class="stat-card" style="background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%); border-left-color: #764ba2; margin-top: 20px;">
+                    <h3>📊 Total Database Size</h3>
+                    <div class="value" style="color: #764ba2;" id="total-db-size">-</div>
+                    <p style="color: #6b7280; margin-top: 10px; font-size: 0.85em;">
+                        Combined size of all three databases. Separation enables efficient querying and independent optimization.
                     </p>
                 </div>
             </div>
@@ -274,7 +312,8 @@
                         <ul>
                             <li>Find content by meaning using embeddings</li>
                             <li>Sentence transformers (all-MiniLM-L6-v2)</li>
-                            <li>Vector similarity search</li>
+                            <li>libsql vector search with vector_top_k()</li>
+                            <li>Stored in dedicated semantic database</li>
                         </ul>
                     </div>
 
@@ -283,7 +322,8 @@
                         <ul>
                             <li>Fast keyword search with SQLite FTS5</li>
                             <li>Search headlines, content, and tags</li>
-                            <li>Traditional text matching</li>
+                            <li>BM25 relevance ranking</li>
+                            <li>Contextual snippets with highlighting</li>
                         </ul>
                     </div>
 
@@ -292,7 +332,18 @@
                         <ul>
                             <li>Search images by text description</li>
                             <li>CLIP (ViT-B/32) embeddings</li>
-                            <li>Text-to-image similarity</li>
+                            <li>libsql vector search for images</li>
+                            <li>Stored in dedicated image database</li>
+                        </ul>
+                    </div>
+
+                    <div class="feature-card">
+                        <h3>⚡ Multi-Database Architecture</h3>
+                        <ul>
+                            <li>Separated databases for better performance</li>
+                            <li>Independent optimization (ANALYZE)</li>
+                            <li>Smaller individual databases</li>
+                            <li>Faster vector searches (smaller indexes)</li>
                         </ul>
                     </div>
                 </div>
@@ -468,9 +519,21 @@
                 document.getElementById('status').textContent = 'Server Running';
                 document.getElementById('status').style.background = '#10b981';
 
-                // Update database location
-                if (stats.db_path) {
-                    document.getElementById('db-location').textContent = stats.db_path;
+                // Update database locations and sizes
+                if (stats.main_db_path) {
+                    document.getElementById('main-db-location').textContent = stats.main_db_path;
+                    document.getElementById('main-db-size').textContent = stats.main_db_size_mb + ' MB';
+                }
+                if (stats.semantic_db_path) {
+                    document.getElementById('semantic-db-location').textContent = stats.semantic_db_path;
+                    document.getElementById('semantic-db-size').textContent = stats.semantic_db_size_mb + ' MB';
+                }
+                if (stats.image_db_path) {
+                    document.getElementById('image-db-location').textContent = stats.image_db_path;
+                    document.getElementById('image-db-size').textContent = stats.image_db_size_mb + ' MB';
+                }
+                if (stats.total_db_size_mb) {
+                    document.getElementById('total-db-size').textContent = stats.total_db_size_mb + ' MB';
                 }
 
                 // Update stats grid

@@ -1,183 +1,44 @@
-#+TITLE: Animal Kingdom
-#+AUTHOR: Example Database
-#+DATE: 2025-10-13
+#+TITLE: Animals
+#+DATE: 2025-10-15
 
-* Large Zoo Animals
-
-These magnificent creatures captivate visitors with their impressive size and strength.
-
-** African Elephants
-
-African elephants are the largest land animals on Earth. They possess remarkable intelligence and complex social structures led by matriarchs. Their trunks contain over 40,000 muscles and can lift up to 350 kg.
-
-*** Habitat and Range
-
-African elephants inhabit savannas, forests, and deserts across sub-Saharan Africa. They require large territories to support their substantial dietary needs.
-
-*** Diet and Behavior
-
-These herbivores consume up to 150 kg of vegetation daily, including grasses, bark, roots, and fruits. They play a crucial role in ecosystem engineering by dispersing seeds and creating water holes.
-
-** Lions
-
-Lions are apex predators known as the "kings of the jungle," though they primarily inhabit grasslands and savannas. They are the only cats that live in social groups called prides.
-
-*** Hunting Strategies
-
-Female lions do most of the hunting, working cooperatively to take down large prey such as zebras, wildebeest, and buffalo. Males primarily defend the pride's territory.
-
-*** Social Structure
-
-Prides typically consist of related females, their cubs, and one to three adult males. This cooperative living arrangement provides protection and improves hunting success.
-
-** Giraffes
-
-Giraffes are the world's tallest mammals, with males reaching heights of up to 5.5 meters. Their long necks contain only seven vertebrae, the same number as humans.
-
-*** Unique Adaptations
-
-Their distinctive spotted coat patterns are unique to each individual, like human fingerprints. Their extremely long tongues (up to 45 cm) help them strip leaves from thorny acacia trees.
-
-** Rhinoceros
-
-These massive herbivores are characterized by their distinctive horns made of keratin. Despite their bulk, they can run at speeds up to 50 km/h.
-
-*** Conservation Status
-
-Both black and white rhinos face severe poaching pressure for their horns, which are falsely believed to have medicinal properties in some cultures.
-
-* Small Pets
-
-Companion animals bring joy and comfort to millions of households worldwide.
+* Animals
 
 ** Cats
 
-Domestic cats are independent, intelligent predators that have lived alongside humans for thousands of years. They retain many wild behaviors including hunting instincts.
+*** Black Cat
 
-*** Breeds and Varieties
+This is a black cat.
 
-From the hairless Sphynx to the fluffy Persian, cat breeds display remarkable diversity. Popular breeds include Siamese, Maine Coon, and British Shorthair.
 
-*** Behavior and Communication
 
-Cats communicate through vocalizations, body language, and scent marking. Purring can indicate contentment but also sometimes stress or pain.
+#+attr_org: :width 800
+[[./screenshots/date-15-10-2025-time-09-16-10.png]]
+
+
+
+Black cats are elegant and mysterious.
+
+*** Orange Cat
+
+This is an orange cat.
+
+
+
+#+attr_org: :width 800
+[[./screenshots/date-15-10-2025-time-09-15-52.png]]
+
+
+
+Orange cats are often friendly and outgoing.
 
 ** Dogs
 
-Dogs are humanity's oldest domesticated animals, descended from wolves. They exhibit extraordinary loyalty and have been bred for countless specialized roles.
+*** Dog
 
-*** Working Dogs
 
-Dogs serve as guide dogs for the blind, therapy animals, search and rescue workers, police dogs, and herding animals. Their keen sense of smell makes them invaluable for detection work.
 
-*** Popular Breeds
+#+attr_org: :width 80
+[[./screenshots/date-15-10-2025-time-09-16-32.png]]
 
-Labrador Retrievers, German Shepherds, and Golden Retrievers consistently rank among the most popular breeds. Small breeds like Chihuahuas and Pomeranians are favored in urban environments.
 
-** Hamsters
-
-These small rodents are nocturnal creatures originally from Syria and surrounding regions. Syrian hamsters are solitary and must be housed individually.
-
-*** Care Requirements
-
-Hamsters need spacious cages with exercise wheels, hiding spots, and bedding material. They store food in their expandable cheek pouches.
-
-** Guinea Pigs
-
-Unlike hamsters, guinea pigs are social animals that thrive in pairs or groups. They communicate through a variety of squeaks and chirps called "wheeking."
-
-*** Dietary Needs
-
-Guinea pigs require vitamin C supplementation as they cannot synthesize it themselves. They are strict herbivores needing constant access to hay.
-
-* Aquatic Animals
-
-Life underwater presents unique challenges and has resulted in fascinating adaptations.
-
-** Marine Mammals
-
-*** Dolphins
-
-Dolphins are highly intelligent cetaceans known for their playful behavior and complex communication. They use echolocation to navigate and hunt in murky waters.
-
-**** Bottlenose Dolphins
-
-The most well-known dolphin species, bottlenose dolphins form strong social bonds and have been observed using tools, such as sponges to protect their rostrums while foraging.
-
-**** Orcas (Killer Whales)
-
-Despite their name, orcas are actually the largest members of the dolphin family. They are apex predators with sophisticated hunting techniques passed down through generations.
-
-*** Whales
-
-**** Blue Whales
-
-The largest animals ever to exist on Earth, blue whales can reach lengths of 30 meters and weights of 200 tons. Their hearts alone weigh as much as an automobile.
-
-**** Humpback Whales
-
-Famous for their haunting songs and spectacular breaching behavior, humpback whales migrate thousands of kilometers between feeding and breeding grounds.
-
-** Fish
-
-*** Tropical Fish
-
-Coral reef fish display dazzling colors and patterns. Clownfish live symbiotically with sea anemones, immune to their stinging tentacles.
-
-*** Sharks
-
-Sharks have existed for over 400 million years. The great white shark is an apex predator with thousands of serrated teeth arranged in multiple rows.
-
-** Crustaceans
-
-*** Crabs
-
-Crabs walk sideways and can regenerate lost limbs. Hermit crabs inhabit abandoned shells for protection, upgrading to larger shells as they grow.
-
-*** Lobsters
-
-Lobsters possess remarkable longevity and show no signs of aging. They continue growing throughout their lives by molting their exoskeletons.
-
-* Birds
-
-Avian species have conquered every habitat from polar regions to tropical rainforests.
-
-** Birds of Prey
-
-*** Eagles
-
-Golden eagles are powerful hunters capable of taking prey much larger than themselves. Their eyesight is several times sharper than human vision.
-
-*** Hawks and Falcons
-
-Peregrine falcons are the fastest animals on Earth, reaching speeds over 300 km/h during hunting dives. They were nearly extinct due to DDT but have made a remarkable recovery.
-
-** Songbirds
-
-*** Nightingales
-
-Nightingales are celebrated for their powerful and beautiful songs. Males sing to attract mates and defend territories, producing over 1,000 different song types.
-
-*** Robins
-
-The American robin is actually a thrush, not closely related to European robins. They are among the first birds to sing at dawn.
-
-** Waterfowl
-
-*** Ducks
-
-Ducks possess waterproof feathers maintained through preening with oil from their uropygial gland. Mallards are the ancestors of most domestic duck breeds.
-
-*** Swans
-
-Swans mate for life and are fiercely territorial during breeding season. Mute swans are the heaviest flying birds, weighing up to 15 kg.
-
-** Flightless Birds
-
-*** Penguins
-
-Penguins are expert swimmers, using their wings as flippers. Emperor penguins can dive to depths of 500 meters and hold their breath for over 20 minutes.
-
-*** Ostriches
-
-The largest living birds, ostriches cannot fly but can run at speeds up to 70 km/h. Their eggs are the largest of any living bird, weighing over 1 kg.
+Dogs are loyal companions.

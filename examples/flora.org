@@ -12,6 +12,12 @@ Fungi represent a distinct kingdom of life, neither plant nor animal. They play 
 
 White button mushrooms (Agaricus bisporus) are the most widely cultivated mushrooms globally. When allowed to mature, they develop into cremini and eventually portobello mushrooms.
 
+
+
+#+attr_org: :width 100
+[[./screenshots/date-15-10-2025-time-09-17-22.png]]
+
+
 **** Nutritional Value
 
 Button mushrooms are low in calories but rich in B vitamins, selenium, and copper. They are one of the few non-animal sources of vitamin D, especially when exposed to UV light.
@@ -61,6 +67,12 @@ Vegetables provide essential vitamins, minerals, and fiber in the human diet.
 *** Carrots
 
 Carrots were originally purple, white, or yellow. The orange variety was developed in the Netherlands in the 17th century. They are exceptionally rich in beta-carotene.
+
+
+
+#+attr_org: :width 100
+[[./screenshots/date-15-10-2025-time-09-17-45.png]]
+
 
 **** Growing Conditions
 
@@ -178,6 +190,12 @@ Flowering plants dominate terrestrial ecosystems with over 300,000 species.
 *** Roses
 
 Roses have been cultivated for over 5,000 years. They belong to the Rosaceae family, which also includes apples, strawberries, and almonds.
+
+
+
+#+attr_org: :width 100
+[[./screenshots/date-15-10-2025-time-09-18-14.png]]
+
 
 **** Rose Types
 

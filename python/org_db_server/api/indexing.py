@@ -37,13 +37,13 @@ def log_memory_usage(context: str = ""):
 router = APIRouter(prefix="/api", tags=["indexing"])
 
 # Global database instance (will be improved later with dependency injection)
-db = Database(settings.db_path)
+db = Database(settings.db_path, settings.semantic_db_path, settings.image_db_path)
 
 @router.get("/files")
 async def get_files() -> Dict[str, Any]:
     """Get list of all files in the database."""
     try:
-        cursor = db.conn.cursor()
+        cursor = db.main_conn.cursor()
         cursor.execute("SELECT filename, indexed_at FROM files ORDER BY indexed_at DESC")
         rows = cursor.fetchall()
 
@@ -58,11 +58,10 @@ async def get_files() -> Dict[str, Any]:
 
 @router.delete("/file")
 async def delete_file(filename: str) -> Dict[str, Any]:
-    """Delete a file and all its associated data from the database."""
+    """Delete a file and all its associated data from all databases."""
     try:
-        cursor = db.conn.cursor()
-
-        # Get file ID
+        # Delete from main database (metadata)
+        cursor = db.main_conn.cursor()
         cursor.execute("SELECT rowid FROM files WHERE filename = ?", (filename,))
         row = cursor.fetchone()
 
@@ -70,20 +69,30 @@ async def delete_file(filename: str) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail=f"File not found: {filename}")
 
         file_id = row[0]
-
-        # Delete the file (CASCADE will handle related data)
         cursor.execute("DELETE FROM files WHERE rowid = ?", (file_id,))
-        db.conn.commit()
+        db.main_conn.commit()
+
+        # Delete from semantic database (chunks and embeddings)
+        cursor = db.semantic_conn.cursor()
+        cursor.execute("DELETE FROM chunks WHERE filename = ?", (filename,))
+        db.semantic_conn.commit()
+
+        # Delete from image database (images and embeddings)
+        cursor = db.image_conn.cursor()
+        cursor.execute("DELETE FROM images WHERE filename = ?", (filename,))
+        db.image_conn.commit()
 
         return {
             "status": "deleted",
             "filename": filename,
-            "message": f"Successfully deleted {filename} and all associated data"
+            "message": f"Successfully deleted {filename} and all associated data from all databases"
         }
     except HTTPException:
         raise
     except Exception as e:
-        db.conn.rollback()
+        db.main_conn.rollback()
+        db.semantic_conn.rollback()
+        db.image_conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/file", response_model=IndexFileResponse)
@@ -106,7 +115,7 @@ async def index_file(request: IndexFileRequest):
             request.file_size
         )
 
-        cursor = db.conn.cursor()
+        cursor = db.main_conn.cursor()
 
         # Delete existing data for this file (we'll re-index everything)
         cursor.execute("DELETE FROM headlines WHERE filename_id = ?", (file_id,))
@@ -183,7 +192,13 @@ async def index_file(request: IndexFileRequest):
             log_memory_usage("before chunking org content")
 
             # Chunk the full content with proper line tracking
-            all_chunks = chunk_text(request.content, method="paragraph")
+            # Use configurable method and size (default: fixed chunks to reduce bloat)
+            all_chunks = chunk_text(
+                request.content,
+                method=settings.org_chunk_method,
+                chunk_size=settings.org_chunk_size,
+                chunk_overlap=settings.org_chunk_overlap
+            )
 
             # Generate embeddings
             if all_chunks:
@@ -193,8 +208,8 @@ async def index_file(request: IndexFileRequest):
                 embeddings = embedding_service.generate_embeddings(chunk_texts)
 
                 log_memory_usage(f"after embeddings, before storing {len(all_chunks)} org chunks")
-                # Store chunks and embeddings
-                db.store_chunks(file_id, all_chunks, embeddings, embedding_service.model_name)
+                # Store chunks and embeddings (semantic DB uses filename not file_id)
+                db.store_chunks(request.filename, all_chunks, embeddings, embedding_service.model_name)
                 log_memory_usage("after storing org chunks")
 
         # Populate FTS5 table with entire file content
@@ -231,8 +246,8 @@ async def index_file(request: IndexFileRequest):
                     embeddings = clip_service.generate_image_embeddings(image_paths)
                     print(f"DEBUG: Generated {len(embeddings)} embeddings")
 
-                    # Store images and embeddings
-                    db.store_images(file_id, images_data, embeddings, clip_service.model_name)
+                    # Store images and embeddings (image DB uses filename not file_id)
+                    db.store_images(request.filename, images_data, embeddings, clip_service.model_name)
                     print(f"DEBUG: Successfully stored images and embeddings")
                 except Exception as e:
                     print(f"Error generating CLIP embeddings: {e}")
@@ -259,6 +274,16 @@ async def index_file(request: IndexFileRequest):
                 try:
                     file_path = linked_file.file_path
                     org_link_line = linked_file.org_link_line
+
+                    # Check file size limit before processing
+                    if settings.max_linked_file_size_mb > 0:
+                        try:
+                            file_size_mb = Path(file_path).stat().st_size / (1024 * 1024)
+                            if file_size_mb > settings.max_linked_file_size_mb:
+                                logger.info(f"Skipping {file_path}: too large ({file_size_mb:.1f} MB > {settings.max_linked_file_size_mb} MB limit)")
+                                continue
+                        except Exception as e:
+                            logger.warning(f"Could not check file size for {file_path}: {e}")
 
                     log_memory_usage(f"before converting linked file {idx}/{len(request.linked_files)}: {Path(file_path).name}")
                     logger.info(f"Converting linked file: {file_path}")
@@ -294,8 +319,20 @@ async def index_file(request: IndexFileRequest):
                         markdown = conversion['markdown']
 
                         log_memory_usage(f"before chunking {Path(file_path).name}")
-                        # Chunk the markdown
-                        chunk_results = chunk_text(markdown, method="paragraph")
+                        # Chunk the markdown - use larger fixed chunks for linked files to reduce bloat
+                        # paragraph method creates too many chunks (one per paragraph)
+                        # fixed method with larger size creates fewer, more efficient chunks
+                        chunk_results = chunk_text(
+                            markdown,
+                            method="fixed",
+                            chunk_size=settings.linked_file_chunk_size,
+                            chunk_overlap=settings.linked_file_chunk_overlap
+                        )
+
+                        # Limit number of chunks per file to prevent bloat
+                        if settings.max_linked_file_chunks > 0 and len(chunk_results) > settings.max_linked_file_chunks:
+                            logger.info(f"Limiting {file_path} from {len(chunk_results)} to {settings.max_linked_file_chunks} chunks")
+                            chunk_results = chunk_results[:settings.max_linked_file_chunks]
 
                         if chunk_results:
                             log_memory_usage(f"before embeddings for {len(chunk_results)} linked file chunks from {Path(file_path).name}")
@@ -304,11 +341,11 @@ async def index_file(request: IndexFileRequest):
                             embeddings = embedding_service.generate_embeddings(texts)
 
                             log_memory_usage(f"after embeddings, before storing linked file chunks from {Path(file_path).name}")
-                            # Store chunks
+                            # Store chunks (semantic DB uses filename not file_id)
                             db.store_linked_file_chunks(
-                                org_file_id=file_id,
+                                org_filename=request.filename,
                                 org_link_line=org_link_line,
-                                linked_file_id=linked_file_id,
+                                linked_file_path=file_path,
                                 chunks=chunk_results,
                                 embeddings=embeddings,
                                 model_name=embedding_service.model_name
@@ -333,7 +370,7 @@ async def index_file(request: IndexFileRequest):
             log_memory_usage("after gc.collect() for linked files")
 
         log_memory_usage("before final commit")
-        db.conn.commit()
+        db.main_conn.commit()
         log_memory_usage("after commit, indexing complete")
 
         # Final garbage collection to free memory for next request
@@ -349,5 +386,5 @@ async def index_file(request: IndexFileRequest):
         )
 
     except Exception as e:
-        db.conn.rollback()
+        db.main_conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))

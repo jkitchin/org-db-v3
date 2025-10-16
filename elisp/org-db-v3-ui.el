@@ -125,17 +125,25 @@ Returns plist with :filename_pattern and/or :keyword."
     ("q" "Quit" transient-quit-one)]]
   ["Search"
    ["Text Search"
-    ("v" "Semantic search" org-db-v3-semantic-search-ivy
-     :description "Vector embeddings (dynamic)")
-    ("k" "Full-text search" org-db-v3-fulltext-search-ivy
-     :description "FTS5 keywords (dynamic)")
+    ("v" "Semantic search" org-db-v3--semantic-search-dispatch
+     :description (lambda () (if (fboundp 'ivy-read)
+                                "Vector embeddings (dynamic)"
+                              "Vector embeddings")))
+    ("k" "Full-text search" org-db-v3--fulltext-search-dispatch
+     :description (lambda () (if (fboundp 'ivy-read)
+                                "FTS5 keywords (dynamic)"
+                              "FTS5 keywords")))
     ("h" "Headline search" org-db-v3-headline-search
      :description "Browse headlines")
+    ("P" "Property search" org-db-v3-property-search
+     :description "PROPERTY=VALUE")
     ("p" "Search at point" org-db-v3-search-at-point
      :description "Text at point/region")]
    ["Image Search"
-    ("i" "Search images" org-db-v3-image-search-ivy
-     :description "CLIP embeddings (dynamic)")]
+    ("i" "Search images" org-db-v3--image-search-dispatch
+     :description (lambda () (if (fboundp 'ivy-read)
+                                "CLIP embeddings (dynamic)"
+                              "CLIP embeddings")))]
    ["Files"
     ("f" "Open file from db" org-db-v3-open-file
      :description "Browse org files")
@@ -165,6 +173,30 @@ Returns plist with :filename_pattern and/or :keyword."
      :description "Open web UI")
     ("X" "Clear database" org-db-v3-clear-database
      :description "Clear database (destructive!)")]])
+
+;;;###autoload
+(defun org-db-v3--semantic-search-dispatch ()
+  "Dispatch to ivy or standard semantic search based on availability."
+  (interactive)
+  (if (fboundp 'ivy-read)
+      (call-interactively 'org-db-v3-semantic-search-ivy)
+    (call-interactively 'org-db-v3-semantic-search)))
+
+;;;###autoload
+(defun org-db-v3--fulltext-search-dispatch ()
+  "Dispatch to ivy or standard fulltext search based on availability."
+  (interactive)
+  (if (fboundp 'ivy-read)
+      (call-interactively 'org-db-v3-fulltext-search-ivy)
+    (call-interactively 'org-db-v3-fulltext-search)))
+
+;;;###autoload
+(defun org-db-v3--image-search-dispatch ()
+  "Dispatch to ivy or standard image search based on availability."
+  (interactive)
+  (if (fboundp 'ivy-read)
+      (call-interactively 'org-db-v3-image-search-ivy)
+    (call-interactively 'org-db-v3-image-search)))
 
 ;;;###autoload
 (defun org-db-v3-update-current-file ()

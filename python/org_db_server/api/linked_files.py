@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/linked-files", tags=["linked-files"])
 
 # Global database instance
-db = Database(settings.db_path)
+db = Database(settings.db_path, settings.semantic_db_path, settings.image_db_path)
 
 
 class LinkedFileRequest(BaseModel):
@@ -56,8 +56,8 @@ async def index_linked_file(request: LinkedFileRequest):
         converter = get_document_converter()
         embedding_service = get_embedding_service()
 
-        # Get org file ID
-        cursor = db.conn.cursor()
+        # Get org file ID from main DB
+        cursor = db.main_conn.cursor()
         cursor.execute("SELECT rowid FROM files WHERE filename = ?", (request.org_filename,))
         row = cursor.fetchone()
 
@@ -126,11 +126,11 @@ async def index_linked_file(request: LinkedFileRequest):
             conversion_error=None
         )
 
-        # Store chunks and embeddings
+        # Store chunks and embeddings (semantic DB uses filename not file_id)
         db.store_linked_file_chunks(
-            org_file_id=org_file_id,
+            org_filename=request.org_filename,
             org_link_line=request.org_link_line,
-            linked_file_id=linked_file_id,
+            linked_file_path=request.file_path,
             chunks=chunk_dicts,
             embeddings=embeddings,
             model_name=embedding_service.model_name
@@ -156,8 +156,8 @@ async def index_linked_file(request: LinkedFileRequest):
 async def get_linked_files_for_org_file(org_filename: str):
     """Get all linked files for an org file."""
     try:
-        # Get org file ID
-        cursor = db.conn.cursor()
+        # Get org file ID from main DB
+        cursor = db.main_conn.cursor()
         cursor.execute("SELECT rowid FROM files WHERE filename = ?", (org_filename,))
         row = cursor.fetchone()
 
@@ -185,7 +185,8 @@ async def get_linked_files_for_org_file(org_filename: str):
 async def list_all_linked_files():
     """List all linked files in the database."""
     try:
-        cursor = db.conn.cursor()
+        # Query main DB for linked files metadata
+        cursor = db.main_conn.cursor()
         cursor.execute("""
             SELECT
                 lf.rowid,
@@ -195,29 +196,37 @@ async def list_all_linked_files():
                 lf.conversion_status,
                 lf.indexed_at,
                 f.filename as org_filename,
-                lf.org_link_line,
-                COUNT(c.rowid) as chunk_count
+                lf.org_link_line
             FROM linked_files lf
             JOIN files f ON lf.org_file_id = f.rowid
-            LEFT JOIN chunks c ON c.linked_file_id = lf.rowid
-            GROUP BY lf.rowid
             ORDER BY lf.indexed_at DESC
         """)
 
         rows = cursor.fetchall()
 
+        # Query semantic DB for chunk counts per linked file
+        semantic_cursor = db.semantic_conn.cursor()
+        semantic_cursor.execute("""
+            SELECT linked_file_path, COUNT(*) as chunk_count
+            FROM chunks
+            WHERE linked_file_path IS NOT NULL
+            GROUP BY linked_file_path
+        """)
+        chunk_counts = {row[0]: row[1] for row in semantic_cursor.fetchall()}
+
         linked_files = []
         for row in rows:
+            file_path = row[1]
             linked_files.append({
                 "id": row[0],
-                "file_path": row[1],
+                "file_path": file_path,
                 "file_type": row[2],
                 "file_size": row[3],
                 "conversion_status": row[4],
                 "indexed_at": row[5],
                 "org_filename": row[6],
                 "org_link_line": row[7],
-                "chunk_count": row[8]
+                "chunk_count": chunk_counts.get(file_path, 0)
             })
 
         return {

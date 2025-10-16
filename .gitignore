@@ -34,3 +34,15 @@ Thumbs.db
 # Development files
 tasks.org
 reload.el
+
+# Backup files
+*.bak
+*.bak[0-9]
+*.backup
+
+# Examples output
+examples/.ob-jupyter/
+examples/screenshots/
+
+# Cleanup review (temporary)
+CLEANUP_REVIEW.md
