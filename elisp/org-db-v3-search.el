@@ -650,7 +650,7 @@ Called by ivy as the user types. Returns a list of candidates with thumbnails."
                   (with-current-buffer
                       (url-retrieve-synchronously
                        (concat (org-db-v3-server-url) "/api/search/images")
-                       t nil 5)  ; 5 second timeout
+                       t nil 15)  ; 15 second timeout (image search can be slower with large DBs)
                     (goto-char (point-min))
                     (re-search-forward "^$")
                     (json-read)))
@@ -898,8 +898,7 @@ You can filter candidates dynamically using completing-read."
 
   (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
                          (org-db-v3--scope-to-params)))
-         (request-body (append `((query . "")
-                                (limit . 1000))
+         (request-body (append `((query . ""))
                               (when scope-params
                                 (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
                                       (cons 'keyword (plist-get scope-params :keyword)))))))
@@ -925,56 +924,34 @@ You can filter candidates dynamically using completing-read."
     (if (zerop (length results))
         (message "No headlines found in database")
 
-      ;; Build candidates with metadata
-      (let* ((candidates nil)
-             (metadata-table (make-hash-table :test 'equal)))
-
-        (dotimes (i (length results))
-          (let* ((result (aref results i))
-                 (title (alist-get 'title result))
-                 (filename (alist-get 'filename result))
-                 (begin (alist-get 'begin result))
-                 (level (alist-get 'level result))
-                 ;; Fixed widths for alignment
-                 (title-width 40)
-                 (display-title (if (> (length title) title-width)
-                                   (concat (substring title 0 (- title-width 3)) "...")
-                                 title))
-                 (padded-title (format (format "%%-%ds" title-width) display-title))
-                 ;; Calculate line number from character position by reading file
-                 (line-number (org-db-v3--char-to-line filename begin))
-                 ;; Format with fixed-width columns: headline | filename:line
-                 (candidate (format "%s | %s:%d"
-                                   padded-title
-                                   filename
-                                   line-number)))
-
-            ;; Store metadata
-            (puthash candidate
-                    (list :file filename
-                          :begin begin
-                          :line line-number
-                          :level level)
-                    metadata-table)
-            (push candidate candidates)))
-
-        ;; Keep original order (by filename and position)
-        (setq candidates (nreverse candidates))
-
-        ;; Let user select
-        (let ((selection (completing-read
-                         (format "Headlines (%d found): " (length results))
-                         candidates
-                         nil t)))
-          (when selection
-            (let* ((metadata (gethash selection metadata-table))
-                   (file (plist-get metadata :file))
-                   (begin (plist-get metadata :begin)))
-              (when (and file (file-exists-p file))
-                (find-file file)
-                (goto-char begin)
-                (org-show-entry)
-                (recenter)))))))))
+      ;; Convert vector of arrays to alist for completing-read
+      ;; Results are simple arrays: [title, filename, begin]
+      ;; We create pairs of (display-string . data-array)
+      (let* ((candidates
+              (mapcar (lambda (result)
+                        (let* ((title (elt result 0))
+                               (filename (elt result 1))
+                               ;; Truncate or pad title to 50 chars
+                               (formatted-title (if (> (length title) 50)
+                                                   (substring title 0 50)
+                                                 (format "%-50s" title))))
+                          (cons (format "%s | %s" formatted-title filename)
+                                result)))
+                      (append results nil)))
+             (selection (completing-read
+                        (format "Headlines (%d found): " (length results))
+                        candidates
+                        nil t)))
+        (when selection
+          ;; Get the array from the selected cons cell
+          (let* ((data (cdr (assoc selection candidates)))
+                 (file (elt data 1))
+                 (begin (elt data 2)))
+            (when (and file (file-exists-p file))
+              (find-file file)
+              (goto-char begin)
+              (org-show-entry)
+              (recenter))))))))
 
 (defun org-db-v3--char-to-line (filename char-pos)
   "Convert character position CHAR-POS in FILENAME to line number.
@@ -1124,6 +1101,111 @@ Returns 1 if file doesn't exist."
                   (goto-char (point-min))
                   (forward-line (1- org-link-line))
                   (recenter))))))))))
+
+;;;###autoload
+(defun org-db-v3-property-search (query)
+  "Search headlines by property name and optional value.
+QUERY should be in format \"PROPERTY=PATTERN\" or just \"PROPERTY\".
+Examples:
+  CATEGORY=org-db     Search for CATEGORY property with value matching 'org-db'
+  TODO=DONE          Search for TODO property with value matching 'DONE'
+  CATEGORY           Search for any headline with CATEGORY property"
+  (interactive "sProperty search (PROPERTY or PROPERTY=PATTERN): ")
+
+  (org-db-v3-ensure-server)
+
+  ;; Parse query to extract property and optional value pattern
+  (let* ((parts (split-string query "=" t))
+         (property (string-trim (car parts)))
+         (value (when (cdr parts) (string-trim (cadr parts))))
+         (scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                         (org-db-v3--scope-to-params)))
+         (request-body (append `((property . ,property)
+                                (limit . 100))
+                              (when value
+                                (list (cons 'value value)))
+                              (when scope-params
+                                (list (cons 'filename_pattern (plist-get scope-params :filename_pattern)))))))
+
+    (plz 'post (concat (org-db-v3-server-url) "/api/search/properties")
+      :headers '(("Content-Type" . "application/json"))
+      :body (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+      :as #'json-read
+      :then (lambda (response)
+              ;; Reset scope after search
+              (when (boundp 'org-db-v3-search-scope)
+                (setq org-db-v3-search-scope '(all . nil)))
+              (org-db-v3-display-property-results query response))
+      :else (lambda (error)
+              ;; Reset scope even on error
+              (when (boundp 'org-db-v3-search-scope)
+                (setq org-db-v3-search-scope '(all . nil)))
+              (message "Search error: %s" (plz-error-message error))))))
+
+(defun org-db-v3-display-property-results (query response)
+  "Display property search RESPONSE for QUERY using completing-read."
+  (let ((results (alist-get 'results response)))
+
+    (if (zerop (length results))
+        (message "No properties found for: %s" query)
+
+      ;; Build candidates with metadata
+      (let* ((candidates nil)
+             (metadata-table (make-hash-table :test 'equal)))
+
+        (dotimes (i (length results))
+          (let* ((result (aref results i))
+                 (headline-title (alist-get 'headline_title result))
+                 (filename (alist-get 'filename result))
+                 (begin (alist-get 'begin result))
+                 (property (alist-get 'property result))
+                 (value (alist-get 'value result))
+                 ;; Fixed widths for alignment
+                 (title-width 40)
+                 (value-width 20)
+                 (display-title (if (> (length headline-title) title-width)
+                                   (concat (substring headline-title 0 (- title-width 3)) "...")
+                                 headline-title))
+                 (padded-title (format (format "%%-%ds" title-width) display-title))
+                 (display-value (if (> (length value) value-width)
+                                   (concat (substring value 0 (- value-width 3)) "...")
+                                 value))
+                 (padded-value (format (format "%%-%ds" value-width) display-value))
+                 ;; Calculate line number from character position
+                 (line-number (org-db-v3--char-to-line filename begin))
+                 ;; Format: property=value | headline | filename:line
+                 (candidate (format "%s=%-20s | %s | %s:%d"
+                                   property
+                                   padded-value
+                                   padded-title
+                                   filename
+                                   line-number)))
+
+            ;; Store metadata
+            (puthash candidate
+                    (list :file filename
+                          :begin begin
+                          :line line-number)
+                    metadata-table)
+            (push candidate candidates)))
+
+        ;; Keep original order (by filename and position)
+        (setq candidates (nreverse candidates))
+
+        ;; Let user select
+        (let ((selection (completing-read
+                         (format "Property results (%d found): " (length results))
+                         candidates
+                         nil t)))
+          (when selection
+            (let* ((metadata (gethash selection metadata-table))
+                   (file (plist-get metadata :file))
+                   (begin (plist-get metadata :begin)))
+              (when (and file (file-exists-p file))
+                (find-file file)
+                (goto-char begin)
+                (org-show-entry)
+                (recenter)))))))))
 
 (provide 'org-db-v3-search)
 ;;; org-db-v3-search.el ends here

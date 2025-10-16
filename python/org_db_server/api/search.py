@@ -10,7 +10,8 @@ from org_db_server.models.schemas import (
     SemanticSearchRequest, SemanticSearchResponse, SearchResult,
     FulltextSearchRequest, FulltextSearchResponse, FulltextSearchResult,
     ImageSearchRequest, ImageSearchResponse, ImageSearchResult,
-    HeadlineSearchRequest, HeadlineSearchResponse, HeadlineSearchResult
+    HeadlineSearchRequest, HeadlineSearchResponse, HeadlineSearchResult,
+    PropertySearchRequest, PropertySearchResponse, PropertySearchResult
 )
 from org_db_server.services.database import Database
 from org_db_server.services.embeddings import get_embedding_service
@@ -21,7 +22,7 @@ from org_db_server.config import settings
 router = APIRouter(prefix="/api/search", tags=["search"])
 
 # Global database instance
-db = Database(settings.db_path)
+db = Database(settings.db_path, settings.semantic_db_path, settings.image_db_path)
 
 @router.post("/semantic", response_model=SemanticSearchResponse)
 async def semantic_search(request: SemanticSearchRequest):
@@ -43,8 +44,8 @@ async def semantic_search(request: SemanticSearchRequest):
         # Convert query embedding to bytes for libsql
         query_bytes = query_embedding.astype(np.float32).tobytes()
 
-        # Use global database connection (now with correct path)
-        cursor = db.conn.cursor()
+        # Use semantic database connection
+        cursor = db.semantic_conn.cursor()
 
         # Count total embeddings to decide between exact vs ANN search
         cursor.execute("SELECT COUNT(*) FROM embeddings WHERE embedding_model = ?", [model_name])
@@ -64,6 +65,25 @@ async def semantic_search(request: SemanticSearchRequest):
             # Exact search: fetch all embeddings and calculate similarities in Python
             logger.debug(f"Using exact search for {total_embeddings} embeddings")
 
+            # Handle keyword filtering by querying main DB first
+            matching_filenames = None
+            if request.keyword:
+                main_cursor = db.main_conn.cursor()
+                main_cursor.execute("""
+                    SELECT f.filename FROM files f
+                    JOIN file_keywords fk ON f.rowid = fk.filename_id
+                    JOIN keywords k ON fk.keyword_id = k.rowid
+                    WHERE k.keyword = ?
+                """, [request.keyword])
+                matching_filenames = {row[0] for row in main_cursor.fetchall()}
+                if not matching_filenames:
+                    return SemanticSearchResponse(
+                        results=[],
+                        query=request.query,
+                        model_used=model_name
+                    )
+
+            # Query semantic DB (no JOINs with main DB)
             base_query = """
                 SELECT
                     e.chunk_id,
@@ -72,29 +92,25 @@ async def semantic_search(request: SemanticSearchRequest):
                     c.chunk_type,
                     c.begin_line,
                     c.end_line,
-                    f.filename,
-                    lf.file_path as linked_file_path,
-                    lf.file_type as linked_file_type
+                    c.filename,
+                    c.linked_file_path,
+                    '' as linked_file_type
                 FROM embeddings e
                 JOIN chunks c ON e.chunk_id = c.rowid
-                JOIN files f ON c.filename_id = f.rowid
-                LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
             """
 
             params = [model_name]
             where_clauses = ["e.embedding_model = ?"]
 
             if request.filename_pattern:
-                where_clauses.append("f.filename LIKE ?")
+                where_clauses.append("c.filename LIKE ?")
                 params.append(request.filename_pattern)
 
-            if request.keyword:
-                base_query += """
-                    JOIN file_keywords fk ON f.rowid = fk.filename_id
-                    JOIN keywords k ON fk.keyword_id = k.rowid
-                """
-                where_clauses.append("k.keyword = ?")
-                params.append(request.keyword)
+            # Apply filename filter from keyword search
+            if matching_filenames:
+                placeholders = ','.join('?' * len(matching_filenames))
+                where_clauses.append(f"c.filename IN ({placeholders})")
+                params.extend(matching_filenames)
 
             base_query += " WHERE " + " AND ".join(where_clauses)
             cursor.execute(base_query, params)
@@ -150,63 +166,86 @@ async def semantic_search(request: SemanticSearchRequest):
         else:
             # Use vector_top_k for larger datasets
             if request.filename_pattern or request.keyword:
-                # With filters: join vector_top_k results with filtered files
-                filter_query = """
-                    SELECT f.rowid FROM files f
-                    WHERE 1=1
-                """
-                filter_params = []
+                # Handle keyword filtering by querying main DB first
+                matching_filenames = None
+                if request.keyword:
+                    main_cursor = db.main_conn.cursor()
+                    main_cursor.execute("""
+                        SELECT f.filename FROM files f
+                        JOIN file_keywords fk ON f.rowid = fk.filename_id
+                        JOIN keywords k ON fk.keyword_id = k.rowid
+                        WHERE k.keyword = ?
+                    """, [request.keyword])
+                    matching_filenames = {row[0] for row in main_cursor.fetchall()}
+                    if not matching_filenames:
+                        return SemanticSearchResponse(
+                            results=[],
+                            query=request.query,
+                            model_used=model_name
+                        )
+
+                # Build WHERE clause for filtering (exclude embedding_model - will filter in Python)
+                where_parts = []
+                where_params = []
 
                 if request.filename_pattern:
-                    filter_query += " AND f.filename LIKE ?"
-                    filter_params.append(request.filename_pattern)
+                    where_parts.append("c.filename LIKE ?")
+                    where_params.append(request.filename_pattern)
 
-                if request.keyword:
-                    filter_query += """
-                        AND EXISTS (
-                            SELECT 1 FROM file_keywords fk
-                            JOIN keywords k ON fk.keyword_id = k.rowid
-                            WHERE fk.filename_id = f.rowid AND k.keyword = ?
-                        )
-                    """
-                    filter_params.append(request.keyword)
-
-                # Get matching file IDs
-                cursor.execute(filter_query, filter_params)
-                matching_file_ids = {row[0] for row in cursor.fetchall()}
-
-                if not matching_file_ids:
-                    return SemanticSearchResponse(
-                        results=[],
-                        query=request.query,
-                        model_used=model_name
-                    )
+                if matching_filenames:
+                    placeholders = ','.join('?' * len(matching_filenames))
+                    where_parts.append(f"c.filename IN ({placeholders})")
+                    where_params.extend(matching_filenames)
 
                 # Get more candidates from vector search and filter
-                cursor.execute("""
-                    SELECT
-                        vt.id as chunk_id,
-                        c.chunk_text,
-                        c.chunk_type,
-                        c.begin_line,
-                        c.end_line,
-                        f.filename,
-                        lf.file_path as linked_file_path,
-                        lf.file_type as linked_file_type,
-                        e.embedding_vector
-                    FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
-                    JOIN embeddings e ON e.rowid = vt.id
-                    JOIN chunks c ON c.rowid = e.chunk_id
-                    JOIN files f ON c.filename_id = f.rowid
-                    LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
-                    WHERE e.embedding_model = ? AND f.rowid IN ({})
-                """.format(','.join('?' * len(matching_file_ids))),
-                    [query_bytes, num_candidates * 3, model_name] + list(matching_file_ids)
-                )
-                rows = cursor.fetchall()[:num_candidates]
+                # NOTE: We can't filter by embedding_model in WHERE clause as it breaks vector index usage
+                # Instead, we over-fetch and filter in Python
+                if where_parts:
+                    where_clause = " AND ".join(where_parts)
+                    cursor.execute(f"""
+                        SELECT
+                            vt.id as chunk_id,
+                            c.chunk_text,
+                            c.chunk_type,
+                            c.begin_line,
+                            c.end_line,
+                            c.filename,
+                            c.linked_file_path,
+                            '' as linked_file_type,
+                            e.embedding_vector,
+                            e.embedding_model
+                        FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                        JOIN embeddings e ON e.rowid = vt.id
+                        JOIN chunks c ON c.rowid = e.chunk_id
+                        WHERE {where_clause}
+                    """, [query_bytes, num_candidates * 3] + where_params)
+                else:
+                    # No WHERE filters, just fetch all
+                    cursor.execute("""
+                        SELECT
+                            vt.id as chunk_id,
+                            c.chunk_text,
+                            c.chunk_type,
+                            c.begin_line,
+                            c.end_line,
+                            c.filename,
+                            c.linked_file_path,
+                            '' as linked_file_type,
+                            e.embedding_vector,
+                            e.embedding_model
+                        FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
+                        JOIN embeddings e ON e.rowid = vt.id
+                        JOIN chunks c ON c.rowid = e.chunk_id
+                    """, [query_bytes, num_candidates * 3])
+
+                # Filter results by embedding_model in Python
+                all_rows = cursor.fetchall()
+                rows = [row for row in all_rows if row[9] == model_name][:num_candidates]
                 logger.info(f"Vector search with filters: {(time.perf_counter()-t1)*1000:.1f}ms")
             else:
-                # No filters: use vector_top_k directly
+                # No filters: use vector_top_k with model filtering in Python
+                # NOTE: We can't filter by embedding_model in WHERE clause as it breaks vector index usage
+                # Instead, we over-fetch and filter in Python
                 cursor.execute("""
                     SELECT
                         vt.id as chunk_id,
@@ -214,18 +253,19 @@ async def semantic_search(request: SemanticSearchRequest):
                         c.chunk_type,
                         c.begin_line,
                         c.end_line,
-                        f.filename,
-                        lf.file_path as linked_file_path,
-                        lf.file_type as linked_file_type,
-                        e.embedding_vector
+                        c.filename,
+                        c.linked_file_path,
+                        '' as linked_file_type,
+                        e.embedding_vector,
+                        e.embedding_model
                     FROM vector_top_k('idx_embeddings_vector', ?, ?) vt
                     JOIN embeddings e ON e.rowid = vt.id
                     JOIN chunks c ON c.rowid = e.chunk_id
-                    JOIN files f ON c.filename_id = f.rowid
-                    LEFT JOIN linked_files lf ON c.linked_file_id = lf.rowid
-                    WHERE e.embedding_model = ?
-                """, [query_bytes, num_candidates, model_name])
-                rows = cursor.fetchall()
+                """, [query_bytes, num_candidates * 3])  # Get 3x more results to account for filtering
+
+                # Filter results by embedding_model in Python
+                all_rows = cursor.fetchall()
+                rows = [row for row in all_rows if row[9] == model_name][:num_candidates]
                 logger.info(f"Vector search (no filters): {(time.perf_counter()-t1)*1000:.1f}ms")
 
             # Build results from vector_top_k output (common for both filtered and unfiltered)
@@ -310,7 +350,7 @@ async def semantic_search(request: SemanticSearchRequest):
 async def fulltext_search(request: FulltextSearchRequest):
     """Perform full-text search using FTS5 with snippets and relevance ranking."""
     try:
-        cursor = db.conn.cursor()
+        cursor = db.main_conn.cursor()
 
         # Build query with optional filters
         # Query FTS5 table with snippet() for highlighted context and bm25() for relevance
@@ -406,47 +446,64 @@ async def image_search(request: ImageSearchRequest):
         # Generate text embedding for the query
         query_embedding = clip_service.generate_text_embedding(request.query)
 
-        cursor = db.conn.cursor()
+        cursor = db.image_conn.cursor()
 
         # Count total images to decide between exact vs ANN search
         cursor.execute("SELECT COUNT(*) FROM image_embeddings WHERE clip_model = ?",
                       [clip_service.model_name])
         total_images = cursor.fetchone()[0]
 
-        # Use exact search for small datasets (more accurate)
-        # Use ANN search for large datasets (much faster)
-        use_exact_search = total_images < 1000
+        # Use exact search for small-to-medium datasets (more accurate and faster up to ~2000 images)
+        # Use ANN search only for very large datasets (>2000 images)
+        # NOTE: ANN search has a bug - WHERE clause after vector_top_k doesn't use index properly
+        # This makes ANN search very slow. Until fixed, use exact search for medium datasets.
+        use_exact_search = total_images < 5000
 
         if use_exact_search:
             # Exact search: fetch all embeddings and calculate similarities
             logger.debug(f"Using exact search for {total_images} images")
 
-            # Build query with optional filters
+            # Handle keyword filtering by querying main DB first
+            matching_filenames = None
+            if request.keyword:
+                main_cursor = db.main_conn.cursor()
+                main_cursor.execute("""
+                    SELECT f.filename FROM files f
+                    JOIN file_keywords fk ON f.rowid = fk.filename_id
+                    JOIN keywords k ON fk.keyword_id = k.rowid
+                    WHERE k.keyword = ?
+                """, [request.keyword])
+                matching_filenames = {row[0] for row in main_cursor.fetchall()}
+                if not matching_filenames:
+                    return ImageSearchResponse(
+                        results=[],
+                        query=request.query,
+                        model_used=clip_service.model_name
+                    )
+
+            # Query image DB (no JOINs with main DB)
             base_query = """
                 SELECT
                     ie.rowid,
                     ie.embedding_vector,
                     i.image_path,
-                    f.filename
+                    i.filename
                 FROM image_embeddings ie
                 JOIN images i ON ie.image_id = i.rowid
-                JOIN files f ON i.filename_id = f.rowid
             """
 
             params = [clip_service.model_name]
             where_clauses = ["ie.clip_model = ?"]
 
             if request.filename_pattern:
-                where_clauses.append("f.filename LIKE ?")
+                where_clauses.append("i.filename LIKE ?")
                 params.append(request.filename_pattern)
 
-            if request.keyword:
-                base_query += """
-                    JOIN file_keywords fk ON f.rowid = fk.filename_id
-                    JOIN keywords k ON fk.keyword_id = k.rowid
-                """
-                where_clauses.append("k.keyword = ?")
-                params.append(request.keyword)
+            # Apply filename filter from keyword search
+            if matching_filenames:
+                placeholders = ','.join('?' * len(matching_filenames))
+                where_clauses.append(f"i.filename IN ({placeholders})")
+                params.extend(matching_filenames)
 
             base_query += " WHERE " + " AND ".join(where_clauses)
             cursor.execute(base_query, params)
@@ -491,63 +548,90 @@ async def image_search(request: ImageSearchRequest):
             query_bytes = query_embedding.astype(np.float32).tobytes()
 
             if request.filename_pattern or request.keyword:
-                # With filters: filter files first
-                filter_query = "SELECT f.rowid FROM files f WHERE 1=1"
-                filter_params = []
+                # Handle keyword filtering by querying main DB first
+                matching_filenames = None
+                if request.keyword:
+                    main_cursor = db.main_conn.cursor()
+                    main_cursor.execute("""
+                        SELECT f.filename FROM files f
+                        JOIN file_keywords fk ON f.rowid = fk.filename_id
+                        JOIN keywords k ON fk.keyword_id = k.rowid
+                        WHERE k.keyword = ?
+                    """, [request.keyword])
+                    matching_filenames = {row[0] for row in main_cursor.fetchall()}
+                    if not matching_filenames:
+                        return ImageSearchResponse(
+                            results=[],
+                            query=request.query,
+                            model_used=clip_service.model_name
+                        )
+
+                # Build WHERE clause for filtering (exclude clip_model - will filter in Python)
+                where_parts = []
+                where_params = []
 
                 if request.filename_pattern:
-                    filter_query += " AND f.filename LIKE ?"
-                    filter_params.append(request.filename_pattern)
+                    where_parts.append("i.filename LIKE ?")
+                    where_params.append(request.filename_pattern)
 
-                if request.keyword:
-                    filter_query += """
-                        AND EXISTS (
-                            SELECT 1 FROM file_keywords fk
-                            JOIN keywords k ON fk.keyword_id = k.rowid
-                            WHERE fk.filename_id = f.rowid AND k.keyword = ?
-                        )
-                    """
-                    filter_params.append(request.keyword)
+                if matching_filenames:
+                    placeholders = ','.join('?' * len(matching_filenames))
+                    where_parts.append(f"i.filename IN ({placeholders})")
+                    where_params.extend(matching_filenames)
 
-                cursor.execute(filter_query, filter_params)
-                matching_file_ids = {row[0] for row in cursor.fetchall()}
+                # Get results from vector search filtered by filenames
+                # NOTE: We can't filter by clip_model in WHERE clause as it breaks vector index usage
+                # Instead, we over-fetch and filter in Python
+                if where_parts:
+                    where_clause = " AND ".join(where_parts)
+                    cursor.execute(f"""
+                        SELECT
+                            ie.rowid,
+                            i.image_path,
+                            i.filename,
+                            ie.embedding_vector,
+                            ie.clip_model
+                        FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
+                        JOIN image_embeddings ie ON ie.rowid = vt.id
+                        JOIN images i ON ie.image_id = i.rowid
+                        WHERE {where_clause}
+                    """, [query_bytes, request.limit * 3] + where_params)
+                else:
+                    # Shouldn't reach here, but handle gracefully
+                    cursor.execute("""
+                        SELECT
+                            ie.rowid,
+                            i.image_path,
+                            i.filename,
+                            ie.embedding_vector,
+                            ie.clip_model
+                        FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
+                        JOIN image_embeddings ie ON ie.rowid = vt.id
+                        JOIN images i ON ie.image_id = i.rowid
+                    """, [query_bytes, request.limit * 3])
 
-                if not matching_file_ids:
-                    return ImageSearchResponse(
-                        results=[],
-                        query=request.query,
-                        model_used=clip_service.model_name
-                    )
-
-                # Get results from vector search filtered by file IDs
-                cursor.execute("""
-                    SELECT
-                        i.image_path,
-                        f.filename,
-                        ie.embedding_vector
-                    FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
-                    JOIN image_embeddings ie ON ie.rowid = vt.id
-                    JOIN images i ON ie.image_id = i.rowid
-                    JOIN files f ON i.filename_id = f.rowid
-                    WHERE ie.clip_model = ? AND f.rowid IN ({})
-                """.format(','.join('?' * len(matching_file_ids))),
-                    [query_bytes, request.limit * 2, clip_service.model_name] + list(matching_file_ids)
-                )
-                rows = cursor.fetchall()[:request.limit]
+                # Filter results by clip_model in Python
+                all_rows = cursor.fetchall()
+                rows = [row for row in all_rows if row[4] == clip_service.model_name][:request.limit]
             else:
-                # No filters: use vector_top_k directly
+                # No filters: use vector_top_k with model filtering
+                # Strategy: Get more results from vector_top_k, then filter by model in Python
+                # This is necessary because WHERE clause after vector_top_k doesn't use the index properly
                 cursor.execute("""
                     SELECT
+                        ie.rowid,
                         i.image_path,
-                        f.filename,
-                        ie.embedding_vector
+                        i.filename,
+                        ie.embedding_vector,
+                        ie.clip_model
                     FROM vector_top_k('idx_image_embeddings_vector', ?, ?) vt
                     JOIN image_embeddings ie ON ie.rowid = vt.id
                     JOIN images i ON ie.image_id = i.rowid
-                    JOIN files f ON i.filename_id = f.rowid
-                    WHERE ie.clip_model = ?
-                """, [query_bytes, request.limit, clip_service.model_name])
-                rows = cursor.fetchall()
+                """, [query_bytes, request.limit * 3])  # Get 3x more results to account for filtering
+
+                # Filter results by clip_model in Python
+                all_rows = cursor.fetchall()
+                rows = [row for row in all_rows if row[4] == clip_service.model_name][:request.limit]
 
             if not rows:
                 return ImageSearchResponse(
@@ -557,11 +641,12 @@ async def image_search(request: ImageSearchRequest):
                 )
 
             # Build results from vector_top_k output and calculate similarity
+            # Columns: rowid, image_path, filename, embedding_vector, clip_model
             search_results = []
             for row in rows:
-                image_path = row[0]
-                filename = row[1]
-                embedding_bytes = row[2]
+                image_path = row[1]
+                filename = row[2]
+                embedding_bytes = row[3]
 
                 # Calculate cosine similarity
                 stored_embedding = np.frombuffer(embedding_bytes, dtype=np.float32)
@@ -587,7 +672,7 @@ async def image_search(request: ImageSearchRequest):
 async def headline_search(request: HeadlineSearchRequest):
     """Search or list all headlines."""
     try:
-        cursor = db.conn.cursor()
+        cursor = db.main_conn.cursor()
 
         # Build base query
         base_query = """
@@ -622,6 +707,59 @@ async def headline_search(request: HeadlineSearchRequest):
         if where_clauses:
             base_query += " WHERE " + " AND ".join(where_clauses)
 
+        base_query += " ORDER BY f.filename, h.begin"
+
+        # Add LIMIT only if specified
+        if request.limit is not None:
+            base_query += " LIMIT ?"
+            params.append(request.limit)
+
+        cursor.execute(base_query, params)
+        rows = cursor.fetchall()
+
+        # Return simple arrays [title, filename, begin] for performance
+        # This is much faster than creating Pydantic objects for 100K+ headlines
+        results = [[row[0], row[1], row[2]] for row in rows]
+
+        return HeadlineSearchResponse(
+            results=results,
+            query=request.query
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/properties", response_model=PropertySearchResponse)
+async def property_search(request: PropertySearchRequest):
+    """Search headlines by property name and optionally value."""
+    try:
+        cursor = db.main_conn.cursor()
+
+        # Build base query to find headlines with specific properties
+        base_query = """
+            SELECT h.title, f.filename, h.begin, p.property, hp.value
+            FROM headline_properties hp
+            JOIN headlines h ON hp.headline_id = h.rowid
+            JOIN files f ON h.filename_id = f.rowid
+            JOIN properties p ON hp.property_id = p.rowid
+        """
+
+        params = []
+        where_clauses = ["p.property = ?"]
+        params.append(request.property)
+
+        # Add value filter if provided
+        if request.value:
+            where_clauses.append("hp.value LIKE ?")
+            params.append(f"%{request.value}%")
+
+        # Add filename pattern filter if provided
+        if request.filename_pattern:
+            where_clauses.append("f.filename LIKE ?")
+            params.append(request.filename_pattern)
+
+        # Combine WHERE clauses
+        base_query += " WHERE " + " AND ".join(where_clauses)
         base_query += " ORDER BY f.filename, h.begin LIMIT ?"
         params.append(request.limit)
 
@@ -630,20 +768,19 @@ async def headline_search(request: HeadlineSearchRequest):
 
         # Convert to result objects
         results = [
-            HeadlineSearchResult(
-                title=row[0],
+            PropertySearchResult(
+                headline_title=row[0],
                 filename=row[1],
                 begin=row[2],
-                level=row[3],
-                tags=row[4],
-                todo_keyword=row[5]
+                property=row[3],
+                value=row[4]
             )
             for row in rows
         ]
 
-        return HeadlineSearchResponse(
+        return PropertySearchResponse(
             results=results,
-            query=request.query
+            property=request.property
         )
 
     except Exception as e:

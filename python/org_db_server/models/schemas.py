@@ -143,7 +143,7 @@ class ImageSearchResponse(BaseModel):
 class HeadlineSearchRequest(BaseModel):
     """Request for headline search."""
     query: str = Field(default="", description="Search query (empty for all headlines)")
-    limit: int = Field(default=100, ge=1, le=1000, description="Maximum number of results")
+    limit: Optional[int] = Field(default=None, ge=1, le=200000, description="Maximum number of results (None = unlimited)")
     filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
     keyword: Optional[str] = Field(default=None, description="Keyword/tag filter")
 
@@ -158,5 +158,25 @@ class HeadlineSearchResult(BaseModel):
 
 class HeadlineSearchResponse(BaseModel):
     """Response from headline search."""
-    results: List[HeadlineSearchResult]
+    results: List[List]  # Simple list of [title, filename, begin] for performance
     query: str
+
+class PropertySearchRequest(BaseModel):
+    """Request for property search."""
+    property: str = Field(..., min_length=1, description="Property name to search for")
+    value: Optional[str] = Field(default=None, description="Optional property value to match")
+    limit: int = Field(default=20, ge=1, le=100, description="Maximum number of results")
+    filename_pattern: Optional[str] = Field(default=None, description="SQL LIKE pattern for directory/project scope")
+
+class PropertySearchResult(BaseModel):
+    """Single property search result."""
+    headline_title: str
+    filename: str
+    begin: int
+    property: str
+    value: str
+
+class PropertySearchResponse(BaseModel):
+    """Response from property search."""
+    results: List[PropertySearchResult]
+    property: str
