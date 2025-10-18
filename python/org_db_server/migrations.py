@@ -64,12 +64,43 @@ def migration_001_add_linked_files(conn: Any):
         logger.info("Migration 001 skipped: linked_file_id column already exists")
 
 
-# Note: Migration 002 (vector indexes) is now part of the base schema in db_models.py
-# No need for separate migration since vector indexes are created with the table
+def migration_002_add_headline_search_indexes(conn: Any):
+    """Migration 002: Add indexes to optimize headline search performance.
+
+    Creates indexes on:
+    - files.last_updated (for sort_by='last_updated')
+    - files.indexed_at (for sort_by='indexed_at')
+    - headlines(filename_id, begin) composite (for ORDER BY optimization)
+
+    These indexes dramatically improve performance when browsing 100K+ headlines.
+    """
+    cursor = conn.cursor()
+
+    logger.info("Creating indexes for headline search optimization...")
+
+    # Index for sorting by last_updated
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_files_last_updated ON files(last_updated)
+    """)
+
+    # Index for sorting by indexed_at
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_files_indexed_at ON files(indexed_at)
+    """)
+
+    # Composite index for efficient JOIN + ORDER BY
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_headlines_filename_begin ON headlines(filename_id, begin)
+    """)
+
+    conn.commit()
+    logger.info("Migration 002 completed: headline search indexes created")
+
 
 # List of all migrations in order
 MIGRATIONS: List[tuple[int, str, Callable[[Any], None]]] = [
     (1, "Add linked_file_id to chunks table", migration_001_add_linked_files),
+    (2, "Add headline search indexes", migration_002_add_headline_search_indexes),
 ]
 
 

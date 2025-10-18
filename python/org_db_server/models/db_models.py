@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS files (
 
 CREATE INDEX IF NOT EXISTS idx_files_filename ON files(filename);
 CREATE INDEX IF NOT EXISTS idx_files_md5 ON files(md5);
+CREATE INDEX IF NOT EXISTS idx_files_last_updated ON files(last_updated);
+CREATE INDEX IF NOT EXISTS idx_files_indexed_at ON files(indexed_at);
 
 -- Headlines table
 CREATE TABLE IF NOT EXISTS headlines (
@@ -35,6 +37,7 @@ CREATE TABLE IF NOT EXISTS headlines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_headlines_filename ON headlines(filename_id);
+CREATE INDEX IF NOT EXISTS idx_headlines_filename_begin ON headlines(filename_id, begin);
 CREATE INDEX IF NOT EXISTS idx_headlines_todo ON headlines(todo_keyword);
 CREATE INDEX IF NOT EXISTS idx_headlines_tags ON headlines(tags);
 

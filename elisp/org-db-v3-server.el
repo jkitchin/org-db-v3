@@ -110,22 +110,32 @@ Includes protection against concurrent starts and port conflicts."
                  :filter #'org-db-v3-server-filter
                  :sentinel #'org-db-v3-server-sentinel))
 
-          ;; Wait for server to start (with feedback)
+          ;; Wait for server to start with retry logic (with feedback)
           (message "Starting org-db server on %s:%d..."
                    org-db-v3-server-host org-db-v3-server-port)
-          (sleep-for 2)
 
-          (if (org-db-v3-server-running-p)
-              (message "org-db server started on %s:%d"
-                       org-db-v3-server-host org-db-v3-server-port)
-            ;; Check if port conflict after failed start
-            (with-current-buffer buffer-name
-              (goto-char (point-min))
-              (if (re-search-forward "Address already in use" nil t)
-                  (message "Failed to start: port %d already in use" org-db-v3-server-port)
-                (pop-to-buffer buffer-name)
-                (goto-char (point-max))
-                (error "Failed to start org-db server. See buffer for details")))))
+          ;; Poll for server readiness with exponential backoff
+          ;; Total max wait: 1 + 2 + 3 + 4 + 5 = 15 seconds
+          (let ((retries 5)
+                (retry-delays '(1 2 3 4 5))
+                (started nil))
+            (while (and retry-delays (not started))
+              (sleep-for (car retry-delays))
+              (setq retry-delays (cdr retry-delays))
+              (when (org-db-v3-server-running-p)
+                (setq started t)))
+
+            (if started
+                (message "org-db server started on %s:%d"
+                         org-db-v3-server-host org-db-v3-server-port)
+              ;; Check if port conflict after failed start
+              (with-current-buffer buffer-name
+                (goto-char (point-min))
+                (if (re-search-forward "Address already in use" nil t)
+                    (message "Failed to start: port %d already in use" org-db-v3-server-port)
+                  (pop-to-buffer buffer-name)
+                  (goto-char (point-max))
+                  (error "Failed to start org-db server. See buffer for details"))))))
       ;; Always clear the starting flag
       (setq org-db-v3-server-starting nil)))))
 
@@ -175,10 +185,28 @@ Includes protection against concurrent starts and port conflicts."
 
 (defun org-db-v3-server-sentinel (process event)
   "Sentinel for server PROCESS EVENT."
-  (when (string-match-p "\\(finished\\|exited\\)" event)
-    (message "org-db server process %s" event)
+  (cond
+   ;; Normal termination (e.g., user called org-db-v3-stop-server)
+   ((string-match-p "finished" event)
+    (message "org-db server stopped normally")
     (setq org-db-v3-server-process nil
-          org-db-v3-server-starting nil)))
+          org-db-v3-server-starting nil))
+
+   ;; Abnormal exit during startup
+   ((and (string-match-p "\\(exited\\|failed\\)" event)
+         org-db-v3-server-starting)
+    (message "org-db server failed to start: %s" (string-trim event))
+    (setq org-db-v3-server-process nil
+          org-db-v3-server-starting nil)
+    (with-current-buffer (process-buffer process)
+      (pop-to-buffer (current-buffer))
+      (goto-char (point-max))))
+
+   ;; Abnormal exit after successful startup (crash)
+   ((string-match-p "\\(exited\\|failed\\)" event)
+    (message "org-db server crashed: %s" (string-trim event))
+    (setq org-db-v3-server-process nil
+          org-db-v3-server-starting nil))))
 
 (defun org-db-v3-ensure-server ()
   "Ensure server is running, start if needed.

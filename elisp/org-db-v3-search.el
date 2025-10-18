@@ -899,9 +899,13 @@ CANDIDATE is a string with metadata stored in text properties."
     :sort-fn nil))  ; Keep relevance order from API
 
 ;;;###autoload
-(defun org-db-v3-headline-search (&optional sort-by)
-  "Browse all headlines and jump to selection.
-You can filter candidates dynamically using completing-read.
+(defun org-db-v3-headline-search-all (&optional sort-by)
+  "Browse ALL headlines and jump to selection.
+Loads all headlines from database upfront. For large databases (100K+
+headlines), this can be slow. Consider using `org-db-v3-headline-search'
+instead, which filters dynamically as you type.
+
+You can filter candidates using completing-read after loading.
 Optional SORT-BY specifies the sort order:
   - \"filename\": Sort alphabetically by filename (default)
   - \"last_updated\": Sort by most recently updated files first
@@ -926,7 +930,7 @@ With prefix arg, prompt for sort order interactively."
     (plz 'post (concat (org-db-v3-server-url) "/api/search/headlines")
       :headers '(("Content-Type" . "application/json"))
       :body (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
-      :as #'json-read
+      :as (lambda () (json-parse-buffer :object-type 'alist :array-type 'list))
       :then (lambda (response)
               ;; Reset scope after search
               (when (boundp 'org-db-v3-search-scope)
@@ -945,29 +949,18 @@ With prefix arg, prompt for sort order interactively."
     (if (zerop (length results))
         (message "No headlines found in database")
 
-      ;; Convert vector of arrays to alist for completing-read
-      ;; Results are simple arrays: [title, filename, begin]
-      ;; We create pairs of (display-string . data-array)
-      (let* ((candidates
-              (mapcar (lambda (result)
-                        (let* ((title (elt result 0))
-                               (filename (elt result 1))
-                               ;; Truncate or pad title to 50 chars
-                               (formatted-title (if (> (length title) 50)
-                                                   (substring title 0 50)
-                                                 (format "%-50s" title))))
-                          (cons (format "%s | %s" formatted-title filename)
-                                result)))
-                      (append results nil)))
-             (selection (completing-read
+      ;; Results are pre-formatted by server: (display_string filename begin)
+      ;; Server handles string formatting for performance with 100K+ headlines
+      ;; JSON parser returns lists directly - pass to completing-read as-is
+      (let ((selection (completing-read
                         (format "Headlines (%d found): " (length results))
-                        candidates
+                        results
                         nil t)))
         (when selection
-          ;; Get the array from the selected cons cell
-          (let* ((data (cdr (assoc selection candidates)))
-                 (file (elt data 1))
-                 (begin (elt data 2)))
+          ;; Selection is the display string, use assoc to find full data
+          (let* ((data (assoc selection results))
+                 (file (cadr data))
+                 (begin (caddr data)))
             (when (and file (file-exists-p file))
               (find-file file)
               (goto-char begin)
@@ -984,6 +977,144 @@ Returns 1 if file doesn't exist."
         (line-number-at-pos))
     ;; File doesn't exist (e.g., test files), return reasonable default
     1))
+
+;; Dynamic headline search (primary method)
+;;
+;; `org-db-v3-headline-search' queries the database as you type, providing
+;; instant filtering without loading all headlines upfront. This is much faster
+;; for large databases (100K+ headlines).
+;;
+;; Key features:
+;; - Queries API dynamically as you type (filters server-side)
+;; - Fast filtering using SQL LIKE queries
+;; - Customizable sort order (filename, last_updated, indexed_at)
+;; - Only fetches matching results (default limit: 100 per query)
+;; - Results show formatted headline and filename
+;;
+;; Usage: M-x org-db-v3-headline-search RET
+;; Then start typing to filter - results update as you type
+;; With prefix arg (C-u): Choose sort order interactively
+;;
+;; For browsing ALL headlines: M-x org-db-v3-headline-search-all
+;; (loads everything upfront, slower for large databases)
+
+(defcustom org-db-v3-ivy-headline-limit 100
+  "Number of headlines to fetch per query for ivy-based headline search.
+Used when querying the API dynamically as you type."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defcustom org-db-v3-ivy-headline-min-query-length 2
+  "Minimum query length before searching headlines.
+Queries shorter than this will show all headlines (up to limit)."
+  :type 'integer
+  :group 'org-db-v3)
+
+(defvar org-db-v3--current-headline-sort "last_updated"
+  "Current sort order for headline search, can be set via prefix arg.")
+
+(defvar org-db-v3--last-headline-results nil
+  "Cache of last headline search results for ivy actions.")
+
+;;;###autoload
+(defun org-db-v3-headline-search (&optional sort-by)
+  "Browse headlines with dynamic filtering - queries API as you type.
+Much faster than `org-db-v3-headline-search-all' for large databases.
+
+Start typing to filter headlines - results update dynamically.
+SORT-BY specifies sort order (filename, last_updated, or indexed_at).
+With prefix arg (C-u), prompts for sort order interactively.
+
+Requires ivy. Falls back to `org-db-v3-headline-search-all' if ivy not available."
+  (interactive
+   (list (when current-prefix-arg
+           (completing-read "Sort by: "
+                          '("filename" "last_updated" "indexed_at")
+                          nil t nil nil org-db-v3-headline-sort-order))))
+
+  (org-db-v3-ensure-server)
+
+  ;; Set current sort order for use in dynamic collection
+  (setq org-db-v3--current-headline-sort (or sort-by org-db-v3-headline-sort-order))
+
+  (if (fboundp 'ivy-read)
+      (ivy-read "Headlines (dynamic filter): "
+                #'org-db-v3--dynamic-headline-collection
+                :dynamic-collection t
+                :caller 'org-db-v3-headline-search
+                :action #'org-db-v3--open-headline-candidate)
+    ;; Fallback to loading all headlines if ivy not available
+    (message "Ivy not available, falling back to loading all headlines...")
+    (org-db-v3-headline-search-all sort-by)))
+
+(defun org-db-v3--dynamic-headline-collection (input)
+  "Fetch headlines matching INPUT dynamically.
+Called by ivy as the user types. Returns a list of candidates."
+  ;; Even for empty input, fetch some results (up to limit)
+  (let* ((scope-params (when (fboundp 'org-db-v3--scope-to-params)
+                         (org-db-v3--scope-to-params)))
+         (request-body (append `((query . ,input)
+                                (limit . ,org-db-v3-ivy-headline-limit)
+                                (sort_by . ,org-db-v3--current-headline-sort))
+                              (when scope-params
+                                (list (cons 'filename_pattern (plist-get scope-params :filename_pattern))
+                                      (cons 'keyword (plist-get scope-params :keyword))))))
+         ;; Synchronous request (required for dynamic collection)
+         (response
+          (condition-case err
+              (let ((url-request-method "POST")
+                    (url-request-extra-headers '(("Content-Type" . "application/json")))
+                    (url-request-data (encode-coding-string
+                                      (json-encode (seq-filter (lambda (pair) (cdr pair)) request-body))
+                                      'utf-8)))
+                (let ((buffer (url-retrieve-synchronously
+                               (concat (org-db-v3-server-url) "/api/search/headlines")
+                               t nil 5)))  ; 5 second timeout
+                  (if (not buffer)
+                      nil
+                    (unwind-protect
+                        (with-current-buffer buffer
+                          (goto-char (point-min))
+                          (when (re-search-forward "^$" nil t)
+                            (json-parse-buffer :object-type 'alist :array-type 'list)))
+                      (kill-buffer buffer)))))
+            (error
+             (message "Headline search error: %S" err)
+             nil))))
+
+    (if (and response (alist-get 'results response))
+        (let ((results (alist-get 'results response)))
+          (if (zerop (length results))
+              (list (format "No headlines found for: %s" input))
+            ;; Store full results for later lookup by action function
+            ;; Results format from server: (display_string filename begin)
+            (setq org-db-v3--last-headline-results results)
+            ;; Return only display strings for ivy
+            (mapcar #'car results)))
+      ;; Error or no results
+      (list (format "Search failed or no results for: %s" input)))))
+
+(defun org-db-v3--open-headline-candidate (candidate)
+  "Open file for selected headline CANDIDATE.
+CANDIDATE is a display string. Look it up in cached results."
+  (let ((data (assoc candidate org-db-v3--last-headline-results)))
+    (if data
+        (let ((file (cadr data))
+              (begin (caddr data)))
+          (if (and file (file-exists-p file))
+              (progn
+                (find-file file)
+                (goto-char begin)
+                (org-show-entry)
+                (recenter))
+            (message "File does not exist: %s" file)))
+      (message "Could not find headline data for: %s" candidate))))
+
+;; Configure ivy for headline search if available
+(with-eval-after-load 'ivy
+  (ivy-configure 'org-db-v3-headline-search
+    :height 15
+    :sort-fn nil))  ; Keep sort order from API
 
 ;;;###autoload
 (defun org-db-v3-open-file ()

@@ -674,9 +674,13 @@ async def headline_search(request: HeadlineSearchRequest):
     try:
         cursor = db.main_conn.cursor()
 
-        # Build base query
+        # Build base query - format display string directly in SQL for performance
+        # SQLite's printf is much faster than Python string formatting for 100K+ rows
         base_query = """
-            SELECT h.title, f.filename, h.begin, h.level, h.tags, h.todo_keyword
+            SELECT
+                substr(h.title, 1, 80) || printf('%*s', max(0, 80 - length(h.title)), '') || ' | ' || f.filename as display_string,
+                f.filename,
+                h.begin
             FROM headlines h
             JOIN files f ON h.filename_id = f.rowid
         """
@@ -723,8 +727,8 @@ async def headline_search(request: HeadlineSearchRequest):
         cursor.execute(base_query, params)
         rows = cursor.fetchall()
 
-        # Return simple arrays [title, filename, begin] for performance
-        # This is much faster than creating Pydantic objects for 100K+ headlines
+        # SQL already formatted the display strings - just convert to list
+        # Returns [display_string, filename, begin] for each result
         results = [[row[0], row[1], row[2]] for row in rows]
 
         return HeadlineSearchResponse(
