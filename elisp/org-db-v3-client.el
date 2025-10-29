@@ -269,7 +269,7 @@ Skips remote Tramp files."
 
               ;; Classify files as existing, missing, or remote
               (dotimes (i count)
-                (let ((filename (alist-get 'filename (aref files i))))
+                (let ((filename (alist-get 'filename (elt files i))))
                   (cond
                    ((file-remote-p filename)
                     (push filename remote-files))
