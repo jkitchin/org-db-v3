@@ -92,6 +92,7 @@ async def index_linked_file(request: LinkedFileRequest):
                 conversion_status=conversion_result['status'],
                 conversion_error=conversion_result.get('error')
             )
+            db.main_conn.commit()
 
             return LinkedFileResponse(
                 status=conversion_result['status'],
@@ -125,6 +126,7 @@ async def index_linked_file(request: LinkedFileRequest):
             conversion_status='success',
             conversion_error=None
         )
+        db.main_conn.commit()
 
         # Store chunks and embeddings (semantic DB uses filename not file_id)
         db.store_linked_file_chunks(

@@ -177,7 +177,6 @@ class Database:
                    WHERE rowid = ?""",
                 (md5, datetime.now().isoformat(), file_size, datetime.now().isoformat(), row[0])
             )
-            self.main_conn.commit()
             return row[0]
         else:
             # Create new file
@@ -186,7 +185,6 @@ class Database:
                    VALUES (?, ?, ?, ?, ?)""",
                 (filename, md5, datetime.now().isoformat(), file_size, datetime.now().isoformat())
             )
-            self.main_conn.commit()
             return cursor.lastrowid
 
     def populate_fts(self, filename_id: int, filename: str, content: str):
@@ -204,8 +202,6 @@ class Database:
             "INSERT INTO fts_content(filename, title, content, tags) VALUES (?, ?, ?, ?)",
             (filename, filename, content, "")
         )
-
-        self.main_conn.commit()
 
     def get_or_create_linked_file(
         self,
@@ -243,7 +239,6 @@ class Database:
                        WHERE rowid = ?""",
                     (md5, file_size, now, conversion_status, conversion_error, now, linked_file_id)
                 )
-                self.main_conn.commit()
                 logger.debug(f"Updated linked file {file_path} (id={linked_file_id})")
 
             return linked_file_id
@@ -257,7 +252,6 @@ class Database:
                 (org_file_id, org_link_line, file_path, file_type, file_size, md5,
                  now, conversion_status, conversion_error, now)
             )
-            self.main_conn.commit()
             linked_file_id = cursor.lastrowid
             logger.debug(f"Created linked file entry for {file_path} (id={linked_file_id})")
             return linked_file_id

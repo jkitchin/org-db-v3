@@ -17,9 +17,11 @@ def temp_db():
     """Create temporary database for testing."""
     temp_dir = tempfile.mkdtemp()
     db_path = Path(temp_dir) / "test.db"
+    semantic_path = Path(temp_dir) / "semantic.db"
+    image_path = Path(temp_dir) / "image.db"
 
     # Create database instance
-    db = Database(db_path)
+    db = Database(db_path, semantic_path, image_path)
 
     # Override the global db instances in both modules
     old_search_db = search.db
@@ -45,6 +47,7 @@ def test_semantic_search(client, temp_db):
     """Test semantic search endpoint."""
     # First, index a file with some content
     file_id = temp_db.get_or_create_file_id("test.org", "abc123", 1000)
+    temp_db.main_conn.commit()
 
     # Create some test chunks with embeddings
     test_texts = [

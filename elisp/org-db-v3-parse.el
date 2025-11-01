@@ -9,6 +9,7 @@
 (require 'org-element)
 (require 'json)
 (require 'seq)  ; For seq-difference
+(require 'org-inlinetask nil t)  ; For inline task support
 
 (defun org-db-v3-parse-headlines (parse-tree)
   "Extract headlines from PARSE-TREE as a list of alists."
@@ -16,7 +17,11 @@
     (lambda (hl)
       (let* ((begin (org-element-property :begin hl))
              (end (org-element-property :end hl))
-             (tags (org-element-property :tags hl))
+             ;; Use org-get-tags to include inherited tags (including file tags from #+FILETAGS:)
+             (tags (save-excursion
+                     (goto-char begin)
+                     ;; org-get-tags returns strings with text properties, strip them
+                     (mapcar #'substring-no-properties (org-get-tags))))
              (scheduled (org-element-property :scheduled hl))
              (deadline (org-element-property :deadline hl))
              (properties (save-excursion
@@ -33,6 +38,41 @@
           ("tags" . ,(when tags
                        (concat ":" (mapconcat #'identity tags ":") ":")))
           ("priority" . ,(when-let* ((p (org-element-property :priority hl)))
+                           (char-to-string p)))
+          ("scheduled" . ,(when scheduled
+                            (org-timestamp-format scheduled "%Y-%m-%d %H:%M:%S")))
+          ("deadline" . ,(when deadline
+                           (org-timestamp-format deadline "%Y-%m-%d %H:%M:%S")))
+          ("properties" . ,properties))))))
+
+(defun org-db-v3-parse-inlinetasks (parse-tree)
+  "Extract inline tasks from PARSE-TREE as a list of alists.
+Inline tasks are treated like headlines for database purposes."
+  (org-element-map parse-tree 'inlinetask
+    (lambda (it)
+      (let* ((begin (org-element-property :begin it))
+             (end (org-element-property :end it))
+             ;; Use org-get-tags to include inherited tags (including file tags from #+FILETAGS:)
+             (tags (save-excursion
+                     (goto-char begin)
+                     ;; org-get-tags returns strings with text properties, strip them
+                     (mapcar #'substring-no-properties (org-get-tags))))
+             (scheduled (org-element-property :scheduled it))
+             (deadline (org-element-property :deadline it))
+             (properties (save-excursion
+                          (goto-char begin)
+                          (org-entry-properties))))
+        `(("title" . ,(org-element-property :raw-value it))
+          ("level" . ,(org-element-property :level it))
+          ("todo_keyword" . ,(org-element-property :todo-keyword it))
+          ("todo_type" . ,(symbol-name (or (org-element-property :todo-type it) 'nil)))
+          ("archivedp" . ,(org-element-property :archivedp it))
+          ("commentedp" . ,(org-element-property :commentedp it))
+          ("begin" . ,begin)
+          ("end" . ,end)
+          ("tags" . ,(when tags
+                       (concat ":" (mapconcat #'identity tags ":") ":")))
+          ("priority" . ,(when-let* ((p (org-element-property :priority it)))
                            (char-to-string p)))
           ("scheduled" . ,(when scheduled
                             (org-timestamp-format scheduled "%Y-%m-%d %H:%M:%S")))
@@ -226,11 +266,14 @@ Limits number of linked files per org file to prevent timeout issues."
   (let* ((parse-tree (org-element-parse-buffer))
          (file-size (when (buffer-file-name)
                      (nth 7 (file-attributes (buffer-file-name)))))
+         ;; Merge headlines and inlinetasks - inlinetasks are treated as headlines
+         (all-headlines (append (org-db-v3-parse-headlines parse-tree)
+                                (org-db-v3-parse-inlinetasks parse-tree)))
          (data `(("filename" . ,(buffer-file-name))
                  ("md5" . ,(md5 (current-buffer)))
                  ("file_size" . ,(or file-size 0))
                  ("content" . ,(buffer-substring-no-properties (point-min) (point-max)))
-                 ("headlines" . ,(vconcat (org-db-v3-parse-headlines parse-tree)))
+                 ("headlines" . ,(vconcat all-headlines))
                  ("links" . ,(vconcat (org-db-v3-parse-links parse-tree)))
                  ("keywords" . ,(vconcat (org-db-v3-parse-keywords parse-tree)))
                  ("src_blocks" . ,(vconcat (org-db-v3-parse-src-blocks parse-tree)))

@@ -20,15 +20,22 @@ def test_linked_file_workflow():
 
     # Setup: Create test database and org file
     db_path = Path("/tmp/test_linked_files_api.db")
+    semantic_path = Path("/tmp/test_linked_files_api_semantic.db")
+    image_path = Path("/tmp/test_linked_files_api_image.db")
     if db_path.exists():
         db_path.unlink()
+    if semantic_path.exists():
+        semantic_path.unlink()
+    if image_path.exists():
+        image_path.unlink()
 
     print("\n1. Creating test database...")
-    db = Database(db_path)
+    db = Database(db_path, semantic_path, image_path)
 
     # Create a test org file entry
     org_filename = "/tmp/test.org"
     org_file_id = db.get_or_create_file_id(org_filename, "abc123", 500)
+    db.main_conn.commit()
     print(f"   ✅ Created org file entry (id={org_file_id})")
 
     # Create a test HTML file to link to
@@ -92,14 +99,15 @@ def test_linked_file_workflow():
         md5=conversion['md5'],
         conversion_status='success'
     )
+    db.main_conn.commit()
     print(f"   ✅ Created linked_file entry (id={linked_file_id})")
 
     # Store chunks
-    chunk_dicts = [{"text": chunk} for chunk in chunks]
+    chunk_dicts = chunk_results  # Use chunk_results directly which has the right format
     db.store_linked_file_chunks(
-        org_file_id=org_file_id,
+        org_filename=org_filename,
         org_link_line=org_link_line,
-        linked_file_id=linked_file_id,
+        linked_file_path=str(test_html),
         chunks=chunk_dicts,
         embeddings=embeddings,
         model_name="all-MiniLM-L6-v2"
@@ -109,25 +117,25 @@ def test_linked_file_workflow():
     # Verify storage
     print("\n6. Verifying storage...")
 
-    cursor = db.conn.cursor()
+    # Chunks are stored in semantic_conn, not main_conn
+    cursor = db.semantic_conn.cursor()
 
-    # Check chunks exist
-    cursor.execute("SELECT COUNT(*) FROM chunks WHERE linked_file_id = ?", (linked_file_id,))
+    # Check chunks exist (linked_file_path is used, not linked_file_id)
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE linked_file_path = ?", (str(test_html),))
     chunk_count = cursor.fetchone()[0]
     print(f"   ✅ Chunks in database: {chunk_count}")
 
-    # Check chunks point to org file
+    # Check chunks point to org file (can't JOIN with files table - it's in a different DB)
     cursor.execute(
-        """SELECT c.filename_id, f.filename, c.begin_line
+        """SELECT c.filename, c.begin_line
            FROM chunks c
-           JOIN files f ON c.filename_id = f.rowid
-           WHERE c.linked_file_id = ?
+           WHERE c.linked_file_path = ?
            LIMIT 1""",
-        (linked_file_id,)
+        (str(test_html),)
     )
     row = cursor.fetchone()
     if row:
-        print(f"   ✅ Chunks point to org file: {row[1]} (line {row[2]})")
+        print(f"   ✅ Chunks point to org file: {row[0]} (line {row[1]})")
     else:
         print("   ❌ No chunks found")
         return False
@@ -137,8 +145,8 @@ def test_linked_file_workflow():
         """SELECT COUNT(*)
            FROM embeddings e
            JOIN chunks c ON e.chunk_id = c.rowid
-           WHERE c.linked_file_id = ?""",
-        (linked_file_id,)
+           WHERE c.linked_file_path = ?""",
+        (str(test_html),)
     )
     embedding_count = cursor.fetchone()[0]
     print(f"   ✅ Embeddings in database: {embedding_count}")
@@ -153,7 +161,6 @@ def test_linked_file_workflow():
         print(f"      - File: {lf['file_path']}")
         print(f"      - Type: {lf['file_type']}")
         print(f"      - Status: {lf['conversion_status']}")
-        print(f"      - Chunks: {lf['chunk_count']}")
 
     # Test get_linked_file_info
     info = db.get_linked_file_info(linked_file_id)
@@ -168,9 +175,9 @@ def test_linked_file_workflow():
         """SELECT c.chunk_text
            FROM chunks c
            JOIN embeddings e ON c.rowid = e.chunk_id
-           WHERE c.linked_file_id = ?
+           WHERE c.linked_file_path = ?
            LIMIT 1""",
-        (linked_file_id,)
+        (str(test_html),)
     )
     row = cursor.fetchone()
     if row:
