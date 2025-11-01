@@ -18,6 +18,7 @@
 ;; Forward declarations
 (declare-function org-db-v3-server-url "org-db-v3")
 (declare-function org-db-v3-ensure-server "org-db-v3")
+(declare-function ivy-read "ivy")
 
 ;; Require plz only when available
 (require 'plz nil t)
@@ -33,6 +34,34 @@
   (defun org-db-v3-ensure-server ()
     "Ensure server is running (stub for testing)."
     nil))
+
+;; Global variable to store metadata table for ivy actions
+(defvar org-db-v3--agenda-metadata-table nil
+  "Hash table storing metadata for agenda candidates.")
+
+(defun org-db-v3--agenda-open-file (candidate)
+  "Open file for agenda CANDIDATE."
+  (when-let* ((metadata (gethash candidate org-db-v3--agenda-metadata-table))
+              (file (plist-get metadata :file))
+              (begin (plist-get metadata :begin)))
+    (when (file-exists-p file)
+      (find-file file)
+      (goto-char begin)
+      (org-show-entry)
+      (recenter))))
+
+(defun org-db-v3--agenda-delete-file (candidate)
+  "Delete file from database for agenda CANDIDATE."
+  (when-let* ((metadata (gethash candidate org-db-v3--agenda-metadata-table))
+              (file (plist-get metadata :file)))
+    (when (yes-or-no-p (format "Delete %s from database? " file))
+      (org-db-v3-ensure-server)
+      (plz 'delete (concat (org-db-v3-server-url) "/api/file?filename=" (url-hexify-string file))
+        :as #'json-read
+        :then (lambda (response)
+                (message "Deleted: %s" (alist-get 'message response)))
+        :else (lambda (error)
+                (message "Delete error: %s" (plz-error-message error)))))))
 
 ;;;###autoload
 (defun org-db-v3-agenda (&optional before-date)
@@ -62,11 +91,12 @@ BEFORE-DATE is a date string like \"+2w\", \"+1m\", or \"2025-12-31\"."
         (message "No TODO items found before %s" before)
 
       ;; Build candidates with metadata
-      (let* ((candidates nil)
-             (metadata-table (make-hash-table :test 'equal)))
+      (let ((candidates nil))
+        ;; Use global metadata table for ivy actions
+        (setq org-db-v3--agenda-metadata-table (make-hash-table :test 'equal))
 
         (dotimes (i (length results))
-          (let* ((result (aref results i))
+          (let* ((result (elt results i))
                  (title (alist-get 'title result))
                  (filename (alist-get 'filename result))
                  (begin (alist-get 'begin result))
@@ -130,26 +160,27 @@ BEFORE-DATE is a date string like \"+2w\", \"+1m\", or \"2025-12-31\"."
                           :todo-keyword todo-keyword
                           :priority priority
                           :tags tags)
-                    metadata-table)
+                    org-db-v3--agenda-metadata-table)
             (push candidate-with-face candidates)))
 
         ;; Reverse to show in chronological order
         (setq candidates (nreverse candidates))
 
-        ;; Let user select with actions
-        (let ((selection (completing-read
-                         (format "Agenda (%d items before %s): " (length results) before)
-                         candidates
-                         nil t)))
-          (when selection
-            (let* ((metadata (gethash selection metadata-table))
-                   (file (plist-get metadata :file))
-                   (begin (plist-get metadata :begin)))
-              (when (and file (file-exists-p file))
-                (find-file file)
-                (goto-char begin)
-                (org-show-entry)
-                (recenter)))))))))
+        ;; Let user select with ivy actions
+        (if (fboundp 'ivy-read)
+            (ivy-read (format "Agenda (%d items before %s): " (length results) before)
+                      candidates
+                      :caller 'org-db-v3-agenda
+                      :action '(1
+                               ("o" org-db-v3--agenda-open-file "Open file")
+                               ("d" org-db-v3--agenda-delete-file "Delete file from db")))
+          ;; Fallback to completing-read if ivy not available
+          (let ((selection (completing-read
+                           (format "Agenda (%d items before %s): " (length results) before)
+                           candidates
+                           nil t)))
+            (when selection
+              (org-db-v3--agenda-open-file selection))))))))
 
 (provide 'org-db-v3-agenda)
 ;;; org-db-v3-agenda.el ends here

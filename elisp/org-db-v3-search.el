@@ -126,7 +126,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length results))
-          (let* ((result (aref results i))
+          (let* ((result (elt results i))
                  (chunk-text (alist-get 'chunk_text result))
                  (filename (alist-get 'filename result))
                  (similarity (alist-get 'similarity_score result))
@@ -306,7 +306,7 @@ Called by ivy as the user types. Returns a list of candidates."
 Each candidate is a string with metadata stored as text properties."
   (let ((candidates nil))
     (dotimes (i (length results))
-      (let* ((result (aref results i))
+      (let* ((result (elt results i))
              (chunk-text (alist-get 'chunk_text result))
              (filename (alist-get 'filename result))
              (similarity (alist-get 'similarity_score result))
@@ -413,7 +413,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length results))
-          (let* ((result (aref results i))
+          (let* ((result (elt results i))
                  (filename (alist-get 'filename result))
                  (title (alist-get 'title result))
                  (content (alist-get 'content result))
@@ -530,7 +530,7 @@ Retrieve up to LIMIT results (default `org-db-v3-search-default-limit')."
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length results))
-          (let* ((result (aref results i))
+          (let* ((result (elt results i))
                  (image-path (alist-get 'image_path result))
                  (filename (alist-get 'filename result))
                  (similarity (alist-get 'similarity_score result))
@@ -691,7 +691,7 @@ Called by ivy as the user types. Returns a list of candidates with thumbnails."
 Each candidate is a string with metadata stored as text properties."
   (let ((candidates nil))
     (dotimes (i (length results))
-      (let* ((result (aref results i))
+      (let* ((result (elt results i))
              (image-path (alist-get 'image_path result))
              (filename (alist-get 'filename result))
              (similarity (alist-get 'similarity_score result))
@@ -852,7 +852,7 @@ Called by ivy as the user types. Returns a list of candidates."
 Each candidate is a string with metadata stored as text properties."
   (let ((candidates nil))
     (dotimes (i (length results))
-      (let* ((result (aref results i))
+      (let* ((result (elt results i))
              (filename (alist-get 'filename result))
              (title (alist-get 'title result))
              (snippet (alist-get 'snippet result))
@@ -1176,7 +1176,7 @@ CANDIDATE is a display string. Look it up in cached results."
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length files))
-          (let* ((file-info (aref files i))
+          (let* ((file-info (elt files i))
                  (filename (alist-get 'filename file-info))
                  (indexed-at (alist-get 'indexed_at file-info))
                  ;; Format timestamp for display (remove microseconds if present)
@@ -1219,7 +1219,7 @@ CANDIDATE is a display string. Look it up in cached results."
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length linked-files))
-          (let* ((file-info (aref linked-files i))
+          (let* ((file-info (elt linked-files i))
                  (file-path (alist-get 'file_path file-info))
                  (file-type (alist-get 'file_type file-info))
                  (org-filename (alist-get 'org_filename file-info))
@@ -1325,7 +1325,7 @@ Examples:
              (metadata-table (make-hash-table :test 'equal)))
 
         (dotimes (i (length results))
-          (let* ((result (aref results i))
+          (let* ((result (elt results i))
                  (headline-title (alist-get 'headline_title result))
                  (filename (alist-get 'filename result))
                  (begin (alist-get 'begin result))
